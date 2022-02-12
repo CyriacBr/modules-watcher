@@ -149,7 +149,7 @@ mod tests {
         let path_str = res.path.to_str().unwrap();
         let dep_1_path_str = res.deps[0].path.to_str().unwrap();
         assert_eq!(path_str, path.to_str().unwrap());
-        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap())
+        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
 
     #[test]
@@ -163,7 +163,7 @@ mod tests {
         let path_str = res.path.to_str().unwrap();
         let dep_1_path_str = res.deps[0].path.to_str().unwrap();
         assert_eq!(path_str, path.to_str().unwrap());
-        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap())
+        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
 
     #[test]
@@ -177,7 +177,7 @@ mod tests {
         let path_str = res.path.to_str().unwrap();
         let dep_1_path_str = res.deps[0].path.to_str().unwrap();
         assert_eq!(path_str, path.to_str().unwrap());
-        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("c/index.js").to_str().unwrap())
+        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("c/index.js").to_str().unwrap());
     }
 
     #[test]
@@ -191,7 +191,7 @@ mod tests {
         let path_str = res.path.to_str().unwrap();
         let dep_1_path_str = res.deps[0].path.to_str().unwrap();
         assert_eq!(path_str, path.to_str().unwrap());
-        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap())
+        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
 
     #[test]
@@ -205,6 +205,38 @@ mod tests {
         let path_str = res.path.to_str().unwrap();
         let dep_1_path_str = res.deps[0].path.to_str().unwrap();
         assert_eq!(path_str, path.to_str().unwrap());
-        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("c/index.js").to_str().unwrap())
+        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("c/index.js").to_str().unwrap());
+    }
+
+    #[test]
+    fn make_user_file_tree() {
+        let mut path = PROJECT_A_PATH.join("x.js");
+
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path());
+        println!("res: {:?}", res);
+        assert_eq!(res.deps.len(), 1 as usize);
+
+        let path_str = res.path.to_str().unwrap();
+        let dep_1_path_str = res.deps[0].path.to_str().unwrap();
+        let dep_1_1_path_str = res.deps[0].deps[0].path.to_str().unwrap();
+        assert_eq!(path_str, path.to_str().unwrap());
+        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("y.js").to_str().unwrap());
+        assert_eq!(dep_1_1_path_str, PROJECT_A_PATH.join("z.js").to_str().unwrap());
+    }
+
+    #[test]
+    fn make_user_file_multiple() {
+        let mut path = PROJECT_A_PATH.join("many.js");
+
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path());
+        println!("res: {:?}", res);
+        assert_eq!(res.deps.len(), 2 as usize);
+
+        let path_str = res.path.to_str().unwrap();
+        let dep_1_path_str = res.deps[0].path.to_str().unwrap();
+        let dep_2_path_str = res.deps[1].path.to_str().unwrap();
+        assert_eq!(path_str, path.to_str().unwrap());
+        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("z.js").to_str().unwrap());
+        assert_eq!(dep_2_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
 }
