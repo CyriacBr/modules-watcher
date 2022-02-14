@@ -171,6 +171,7 @@ mod tests {
     lazy_static! {
         static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
         static ref PROJECT_A_PATH: PathBuf = CWD.join("tests/fixtures/project_a");
+        static ref THREEJS_PATH: PathBuf = CWD.join("tests/fixtures/three_js");
     }
 
     #[test]
@@ -197,6 +198,15 @@ mod tests {
     fn make_entries_test_glob() {
         let (store, entries) = make_entries(Vec::new(), Some("**/relative_*.js"), PROJECT_A_PATH.to_path_buf());
         assert_eq!(entries.len(), 4 as usize);
+    }
+
+    #[test]
+    fn make_entries_test_three_js() {
+        let duration = std::time::Instant::now();
+        let (store, entries) = make_entries(Vec::new(), Some("**/*.js"), THREEJS_PATH.to_path_buf());
+        println!("Elapsed: {}ms", duration.elapsed().as_millis());
+        println!("Processed files: {}", store.len());
+        assert_eq!(store.len() > 0, true);
     }
 
     #[test]
