@@ -8,6 +8,7 @@ use rayon::prelude::*;
 use path_clean::{clean, PathClean};
 use dashmap::{DashMap};
 use dashmap::mapref::one::Ref;
+use glob::glob;
 
 pub struct FileItem {
     path: PathBuf,
@@ -33,12 +34,22 @@ impl FileItem {
     }
 }
 
-pub fn make_entries(entry_paths: Vec<PathBuf>, project_path: PathBuf) -> (DashMap<String, FileItem>, Vec<FileItem>) {
+pub fn make_entries(entry_paths: Vec<PathBuf>, entry_glob: Option<&str>, project_path: PathBuf) -> (DashMap<String, FileItem>, Vec<FileItem>) {
     let store = DashMap::new();
-    entry_paths.par_iter().for_each(|p| {
+    let mut paths: Vec<PathBuf> = entry_paths.clone();
+
+    if let Some(glob_str) = entry_glob {
+        let full_glob = if glob_str.starts_with("/") {
+            glob_str.to_owned()
+        } else {
+            project_path.join(glob_str).to_str().unwrap().to_owned()
+        };
+        paths.extend(glob(&full_glob).expect("Failed to read glob pattern").map(|x| x.unwrap()));
+    }
+    paths.par_iter().for_each(|p| {
         make_user_file(p, &project_path, &store);
     });
-    let entry_path_str_list: Vec<String> = entry_paths.iter().map(|x| x.to_str().unwrap().to_string()).collect();
+    let entry_path_str_list: Vec<String> = paths.iter().map(|x| x.to_str().unwrap().to_string()).collect();
     let entries = entry_path_str_list.iter().map(|x| store.get(x).unwrap().clone()).collect();
     (store, entries)
 }
@@ -155,7 +166,7 @@ mod tests {
     use std::string::String;
     use dashmap::DashMap;
     use lazy_static::lazy_static;
-    use crate::entry::{make_user_file, resolve_with_extension};
+    use crate::entry::{make_entries, make_user_file, resolve_with_extension};
 
     lazy_static! {
         static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
@@ -168,6 +179,24 @@ mod tests {
 
         let res = resolve_with_extension(&path).unwrap();
         assert_eq!(res.to_str(), CWD.join("tests/fixtures/project_a/b.js").to_str());
+    }
+
+    #[test]
+    fn make_entries_test_no_glob() {
+        let path_1 = PROJECT_A_PATH.join("relative_w_ext.js");
+        let path_2 = PROJECT_A_PATH.join("y.js");
+        let mut paths = Vec::new();
+        paths.push(path_1);
+        paths.push(path_2);
+
+        let (store, entries) = make_entries(paths, None, PROJECT_A_PATH.to_path_buf());
+        assert_eq!(entries.len(), 2 as usize);
+    }
+
+    #[test]
+    fn make_entries_test_glob() {
+        let (store, entries) = make_entries(Vec::new(), Some("**/relative_*.js"), PROJECT_A_PATH.to_path_buf());
+        assert_eq!(entries.len(), 4 as usize);
     }
 
     #[test]
