@@ -1,7 +1,7 @@
 #![deny(clippy::all)]
 
-mod watcher;
-mod entry;
+pub mod watcher;
+pub mod entry;
 
 #[macro_use]
 extern crate napi_derive;

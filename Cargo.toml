@@ -16,6 +16,11 @@ rayon = "1.5"
 path-clean = "0.1.0"
 dashmap = "5.1.0"
 glob = "0.3.0"
+criterion = "0.3"
+
+[[bench]]
+name = "make_entries"
+harness = false
 
 [build-dependencies]
 napi-build = "1.2.1"
