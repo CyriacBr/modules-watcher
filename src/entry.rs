@@ -1,18 +1,17 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::fs::*;
-use std::ops::Deref;
 use lazy_static::lazy_static;
 use regex::Regex;
 use rayon::prelude::*;
-use path_clean::{clean, PathClean};
+use path_clean::{PathClean};
 use dashmap::{DashMap};
 use dashmap::mapref::one::Ref;
 use glob::glob;
 
 pub struct FileItem {
-    path: PathBuf,
-    direct_deps: Vec<String>,
+    pub path: PathBuf,
+    pub direct_deps: Vec<String>,
+    pub timestamp: u128
 }
 
 impl FileItem {
@@ -20,6 +19,7 @@ impl FileItem {
         FileItem {
             path: PathBuf::from(&self.path),
             direct_deps: self.direct_deps.iter().map(|x| String::from(x)).collect(),
+            timestamp: 0
         }
     }
 
@@ -65,9 +65,16 @@ fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a
         return store.get(key).unwrap();
     }
 
+    let mut timestamp: u128 = 0;
+    if let Ok(meta) = metadata(file_path) {
+        let time = meta.modified().unwrap();
+        timestamp = time.elapsed().unwrap().as_millis();
+    }
+
     store.insert(key.to_string(), FileItem {
         path: PathBuf::from(&file_path),
         direct_deps: Vec::new(),
+        timestamp
     });
 
     // Scan file for imports
@@ -356,5 +363,23 @@ mod tests {
         let dep_1_path_str = &res.direct_deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
+    }
+
+    #[test]
+    fn make_user_file_test_timestamp() {
+        let path = PROJECT_A_PATH.join("timestamp.js");
+
+        let store1 = DashMap::new();
+        let res1 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store1);
+        let timestamp_1 = res1.timestamp;
+
+        std::fs::write(&path, "hello world").unwrap();
+
+        let store2 = DashMap::new();
+        let res2 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store2);
+        let timestamp_2 = res2.timestamp;
+
+        assert_eq!(timestamp_1 > 0, true);
+        assert_eq!(timestamp_2 > timestamp_1, true);
     }
 }
