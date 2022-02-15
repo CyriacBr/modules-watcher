@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::fs::*;
 use lazy_static::lazy_static;
-use regex::Regex;
+use regex::{CaptureMatches, Captures, Regex};
 use rayon::prelude::*;
 use path_clean::{PathClean};
 use dashmap::{DashMap};
@@ -34,7 +34,16 @@ impl FileItem {
     }
 }
 
-pub fn make_entries(entry_paths: Vec<PathBuf>, entry_glob: Option<&str>, project_path: PathBuf) -> (DashMap<String, FileItem>, Vec<FileItem>) {
+pub struct MakeEntriesOptions {
+    pub supported_paths: Vec<SupportedPath>,
+}
+
+pub enum SupportedPath {
+    ESM(Vec<String>),
+    DYN_ESM_REQ(Vec<String>),
+}
+
+pub fn make_entries(entry_paths: Vec<PathBuf>, entry_glob: Option<&str>, project_path: PathBuf, opts: Option<MakeEntriesOptions>) -> (DashMap<String, FileItem>, Vec<FileItem>) {
     let store = DashMap::new();
     let mut paths: Vec<PathBuf> = entry_paths.clone();
 
@@ -47,7 +56,7 @@ pub fn make_entries(entry_paths: Vec<PathBuf>, entry_glob: Option<&str>, project
         paths.extend(glob(&full_glob).expect("Failed to read glob pattern").map(|x| x.unwrap()));
     }
     paths.par_iter().for_each(|p| {
-        make_user_file(p, &project_path, &store);
+        make_user_file(p, &project_path, &store, &opts);
     });
     let entry_path_str_list: Vec<String> = paths.iter().map(|x| x.to_str().unwrap().to_string()).collect();
     let entries = entry_path_str_list.iter().map(|x| store.get(x).unwrap().clone()).collect();
@@ -58,11 +67,39 @@ lazy_static! {
     static ref NAMED_MODULE_RE: Regex = Regex::new(r#"(?:import|export)\s+.+from\s+['"]([([\.\~]/)|(\.\./)].+)['"]"#).unwrap();
     static ref UNNAMED_MODULE_RE: Regex = Regex::new(r#"(?:import|export)\s+['"]([([\.\~]/)|(\.\./)].+)['"]"#).unwrap();
     static ref REQUIRE_DYNIMP_RE: Regex = Regex::new(r#"(?:require|import)\(['"]([([\.\~]/)|(\.\./)].+)['"]\)"#).unwrap();
+
+    static ref DEFAULT_JS_EXTS: Vec<String> = vec!["ts", "js", "cjs", "mjs"].iter().map(|x| x.to_string()).collect();
+    static ref DEFAULT_SUPPATH_ESM: SupportedPath = SupportedPath::ESM(DEFAULT_JS_EXTS.clone());
+    static ref DEFAULT_SUPPATH_DYN_ESM: SupportedPath = SupportedPath::DYN_ESM_REQ(DEFAULT_JS_EXTS.clone());
 }
-fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a DashMap<String, FileItem>) -> Ref<'a, String, FileItem> {
+fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a DashMap<String, FileItem>, opts: &Option<MakeEntriesOptions>) -> Option<Ref<'a, String, FileItem>> {
     let key = file_path.to_str().unwrap();
     if store.contains_key(key) {
-        return store.get(key).unwrap();
+        return Some(store.get(key).unwrap());
+    }
+
+    let supported_paths: Vec<&SupportedPath> = match opts {
+        Some(opts_val) => opts_val.supported_paths.iter().map(|x| x).collect(),
+        _ => vec![&DEFAULT_SUPPATH_ESM, &DEFAULT_SUPPATH_DYN_ESM]
+    };
+    let mut supported_exts: Vec<&String> = Vec::new();
+    let mut esm_exts: &Vec<String> = &Vec::new();
+    let mut dyn_esm_exts: &Vec<String> = &Vec::new();
+    for supported_path in &supported_paths {
+        match *supported_path {
+            SupportedPath::ESM(exts) => {
+                esm_exts = exts;
+                supported_exts.extend(exts.iter().map(|x| x));
+            },
+            SupportedPath::DYN_ESM_REQ(exts) => {
+                dyn_esm_exts = exts;
+                supported_exts.extend(exts.iter().map(|x| x));
+            }
+        }
+    }
+    let file_ext = file_path.extension().unwrap().to_str().unwrap().to_string();
+    if !supported_exts.iter().any(|x| (*x).eq(&file_ext)) {
+        return None;
     }
 
     let mut timestamp: u128 = 0;
@@ -79,38 +116,56 @@ fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a
 
     // Scan file for imports
     let content = read_to_string(&file_path).expect(&("Couldn't read file: ".to_owned() + file_path.to_str().unwrap()));
-    for cap in NAMED_MODULE_RE.captures_iter(&content).chain(UNNAMED_MODULE_RE.captures_iter(&content)).chain(REQUIRE_DYNIMP_RE.captures_iter(&content)) {
-        let source = &cap[1];
-        let mut path_buf = if source.starts_with("./") || source.starts_with("../") {
-            let dir = file_path.parent().unwrap();
-            dir.join(source).clean()
-        } else if source.starts_with("~/") {
-            let transformed_path = source.replace("~/", "");
-            project_path.join(Path::new(&transformed_path)).clean()
-        } else {
-            panic!("Couldn't handle import: {}", source);
-        };
-        // If the imported file is a directory, we need to resolve it's index file
-        if path_buf.is_dir() {
-            if let Some(found) = resolve_index(&path_buf) {
-                path_buf = found;
-            } else {
-                panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
+    let mut captures: Vec<CaptureMatches> = Vec::new();
+    for path_type in supported_paths {
+        match path_type {
+            SupportedPath::ESM(_) => {
+                if esm_exts.iter().any(|x| x.eq(&file_ext)) {
+                    captures.push(NAMED_MODULE_RE.captures_iter(&content));
+                    captures.push(UNNAMED_MODULE_RE.captures_iter(&content));
+                }
+            }
+            SupportedPath::DYN_ESM_REQ(_) => {
+                if esm_exts.iter().any(|x| x.eq(&file_ext)) {
+                    captures.push(REQUIRE_DYNIMP_RE.captures_iter(&content));
+                }
             }
         }
-        // If the imported file has no extension, we need to resolve it
-        else if let None = path_buf.extension() {
-            if let Some(found) = resolve_with_extension(&path_buf) {
-                path_buf = found;
+    }
+    for capture in captures {
+        for cap in capture {
+            let source = &cap[1];
+            let mut path_buf = if source.starts_with("./") || source.starts_with("../") {
+                let dir = file_path.parent().unwrap();
+                dir.join(source).clean()
+            } else if source.starts_with("~/") {
+                let transformed_path = source.replace("~/", "");
+                project_path.join(Path::new(&transformed_path)).clean()
             } else {
-                panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
+                panic!("Couldn't handle import: {}", source);
+            };
+            // If the imported file is a directory, we need to resolve it's index file
+            if path_buf.is_dir() {
+                if let Some(found) = resolve_index(&path_buf) {
+                    path_buf = found;
+                } else {
+                    panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
+                }
             }
+            // If the imported file has no extension, we need to resolve it
+            else if let None = path_buf.extension() {
+                if let Some(found) = resolve_with_extension(&path_buf) {
+                    path_buf = found;
+                } else {
+                    panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
+                }
+            }
+            make_user_file(&path_buf, project_path, store, opts);
+            store.get_mut(key).unwrap().direct_deps.push(path_buf.to_str().unwrap().to_string());
         }
-        make_user_file(&path_buf, project_path, store);
-        store.get_mut(key).unwrap().direct_deps.push(path_buf.to_str().unwrap().to_string());
     }
 
-    store.get(key).unwrap()
+    Some(store.get(key).unwrap())
 }
 
 /// Take a path of a file without extension and resolve it's extension.
@@ -198,20 +253,20 @@ mod tests {
         paths.push(path_1);
         paths.push(path_2);
 
-        let (store, entries) = make_entries(paths, None, PROJECT_A_PATH.to_path_buf());
+        let (store, entries) = make_entries(paths, None, PROJECT_A_PATH.to_path_buf(), None);
         assert_eq!(entries.len(), 2 as usize);
     }
 
     #[test]
     fn make_entries_test_glob() {
-        let (store, entries) = make_entries(Vec::new(), Some("**/relative_*.js"), PROJECT_A_PATH.to_path_buf());
+        let (store, entries) = make_entries(Vec::new(), Some("**/relative_*.js"), PROJECT_A_PATH.to_path_buf(), None);
         assert_eq!(entries.len(), 4 as usize);
     }
 
     #[test]
     fn make_entries_test_three_js() {
         let duration = std::time::Instant::now();
-        let (store, entries) = make_entries(Vec::new(), Some("**/*.js"), THREEJS_PATH.to_path_buf());
+        let (store, entries) = make_entries(Vec::new(), Some("**/*.js"), THREEJS_PATH.to_path_buf(), None);
         println!("Elapsed: {}ms", duration.elapsed().as_millis());
         println!("Processed files: {}", store.len());
         assert_eq!(store.len() > 0, true);
@@ -222,7 +277,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("relative_w_ext.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.direct_deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -236,7 +291,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("relative_wo_ext.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.direct_deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -250,7 +305,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("relative_w_index.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.direct_deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -264,7 +319,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("c/relative_parent.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.direct_deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -278,7 +333,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("project_path.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.direct_deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -292,7 +347,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("x.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         let deps = res.get_all_deps(&store);
         assert_eq!(res.direct_deps.len(), 1 as usize);
         assert_eq!(deps.len(), 2 as usize);
@@ -310,7 +365,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("many.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         let deps = res.get_all_deps(&store);
         assert_eq!(res.direct_deps.len(), 2 as usize);
         assert_eq!(deps.len(), 2 as usize);
@@ -328,7 +383,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("export.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.direct_deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -342,7 +397,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("require.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.direct_deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -356,7 +411,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("dyn_import.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store);
+        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.direct_deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
