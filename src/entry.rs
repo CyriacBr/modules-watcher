@@ -11,7 +11,7 @@ use glob::glob;
 pub struct FileItem {
     pub path: PathBuf,
     pub direct_deps: Vec<String>,
-    pub timestamp: u128
+    pub checksum: u32
 }
 
 impl FileItem {
@@ -19,7 +19,7 @@ impl FileItem {
         FileItem {
             path: PathBuf::from(&self.path),
             direct_deps: self.direct_deps.iter().map(|x| String::from(x)).collect(),
-            timestamp: 0
+            checksum: 0
         }
     }
 
@@ -102,20 +102,16 @@ fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a
         return None;
     }
 
-    let mut timestamp: u128 = 0;
-    if let Ok(meta) = metadata(file_path) {
-        let time = meta.modified().unwrap();
-        timestamp = time.elapsed().unwrap().as_millis();
-    }
-
     store.insert(key.to_string(), FileItem {
         path: PathBuf::from(&file_path),
         direct_deps: Vec::new(),
-        timestamp
+        checksum: 0
     });
 
     // Scan file for imports
     let content = read_to_string(&file_path).expect(&("Couldn't read file: ".to_owned() + file_path.to_str().unwrap()));
+    store.get_mut(key).unwrap().checksum = crc32fast::hash(content.as_bytes());
+
     let mut captures: Vec<CaptureMatches> = Vec::new();
     for path_type in supported_paths {
         match path_type {
@@ -421,20 +417,27 @@ mod tests {
     }
 
     #[test]
-    fn make_user_file_test_timestamp() {
+    fn make_user_file_test_checksum() {
         let path = PROJECT_A_PATH.join("timestamp.js");
 
+        std::fs::write(&path, "bye world").unwrap();
+
         let store1 = DashMap::new();
-        let res1 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store1);
-        let timestamp_1 = res1.timestamp;
+        let res1 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store1, &None).unwrap();
+        let checksum_1 = res1.checksum;
 
         std::fs::write(&path, "hello world").unwrap();
 
         let store2 = DashMap::new();
-        let res2 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store2);
-        let timestamp_2 = res2.timestamp;
+        let res2 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store2, &None).unwrap();
+        let checksum_2 = res2.checksum;
 
-        assert_eq!(timestamp_1 > 0, true);
-        assert_eq!(timestamp_2 > timestamp_1, true);
+        let store3 = DashMap::new();
+        let res3 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store3, &None).unwrap();
+        let checksum_3 = res3.checksum;
+
+        assert_eq!(checksum_1 > 0, true);
+        assert_eq!(checksum_2 != checksum_1, true);
+        assert_eq!(checksum_2 == checksum_3, true);
     }
 }
