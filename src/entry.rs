@@ -11,7 +11,7 @@ use glob::glob;
 pub struct FileItem {
     pub path: PathBuf,
     pub direct_deps: Vec<String>,
-    pub checksum: u32
+    pub checksum: u32,
 }
 
 impl FileItem {
@@ -19,7 +19,7 @@ impl FileItem {
         FileItem {
             path: PathBuf::from(&self.path),
             direct_deps: self.direct_deps.iter().map(|x| String::from(x)).collect(),
-            checksum: 0
+            checksum: 0,
         }
     }
 
@@ -43,11 +43,11 @@ pub enum SupportedPath {
     DYN_ESM_REQ(Vec<String>),
 }
 
-pub fn make_entries(entry_paths: Vec<PathBuf>, entry_glob: Option<&str>, project_path: PathBuf, opts: Option<MakeEntriesOptions>) -> (DashMap<String, FileItem>, Vec<FileItem>) {
+pub fn make_entries(entry_paths: Vec<PathBuf>, entry_globs: Option<Vec<&str>>, project_path: PathBuf, opts: Option<MakeEntriesOptions>) -> (DashMap<String, FileItem>, Vec<FileItem>) {
     let store = DashMap::new();
     let mut paths: Vec<PathBuf> = entry_paths.clone();
 
-    if let Some(glob_str) = entry_glob {
+    for glob_str in entry_globs.unwrap_or(vec![]) {
         let full_glob = if glob_str.starts_with("/") {
             glob_str.to_owned()
         } else {
@@ -55,6 +55,7 @@ pub fn make_entries(entry_paths: Vec<PathBuf>, entry_glob: Option<&str>, project
         };
         paths.extend(glob(&full_glob).expect("Failed to read glob pattern").map(|x| x.unwrap()));
     }
+
     paths.par_iter().for_each(|p| {
         make_user_file(p, &project_path, &store, &opts);
     });
@@ -90,7 +91,7 @@ fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a
             SupportedPath::ESM(exts) => {
                 esm_exts = exts;
                 supported_exts.extend(exts.iter().map(|x| x));
-            },
+            }
             SupportedPath::DYN_ESM_REQ(exts) => {
                 dyn_esm_exts = exts;
                 supported_exts.extend(exts.iter().map(|x| x));
@@ -105,7 +106,7 @@ fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a
     store.insert(key.to_string(), FileItem {
         path: PathBuf::from(&file_path),
         direct_deps: Vec::new(),
-        checksum: 0
+        checksum: 0,
     });
 
     // Scan file for imports
@@ -255,14 +256,14 @@ mod tests {
 
     #[test]
     fn make_entries_test_glob() {
-        let (store, entries) = make_entries(Vec::new(), Some("**/relative_*.js"), PROJECT_A_PATH.to_path_buf(), None);
+        let (store, entries) = make_entries(Vec::new(), Some(vec!["**/relative_*.js"]), PROJECT_A_PATH.to_path_buf(), None);
         assert_eq!(entries.len(), 4 as usize);
     }
 
     #[test]
     fn make_entries_test_three_js() {
         let duration = std::time::Instant::now();
-        let (store, entries) = make_entries(Vec::new(), Some("**/*.js"), THREEJS_PATH.to_path_buf(), None);
+        let (store, entries) = make_entries(Vec::new(), Some(vec!["**/*.js"]), THREEJS_PATH.to_path_buf(), None);
         println!("Elapsed: {}ms", duration.elapsed().as_millis());
         println!("Processed files: {}", store.len());
         assert_eq!(store.len() > 0, true);

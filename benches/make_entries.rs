@@ -16,10 +16,10 @@ lazy_static! {
 fn bench_make_entries(c: &mut Criterion) {
     let mut group = c.benchmark_group("make_entries");
     group.bench_function("three_js (all supported paths)", |b| b.iter(|| {
-        entry::make_entries(Vec::new(), Some("**/*.js"), THREEJS_PATH.to_path_buf(), None);
+        entry::make_entries(Vec::new(), Some(vec!["**/*.js"]), THREEJS_PATH.to_path_buf(), None);
     }));
     group.bench_function("three_js (only ESM .js)", |b| b.iter(|| {
-        entry::make_entries(Vec::new(), Some("**/*.js"), THREEJS_PATH.to_path_buf(), Some(MakeEntriesOptions {
+        entry::make_entries(Vec::new(), Some(vec!["**/*.js"]), THREEJS_PATH.to_path_buf(), Some(MakeEntriesOptions {
             supported_paths: vec![entry::SupportedPath::ESM(vec!["js".to_string()])]
         }));
     }));
