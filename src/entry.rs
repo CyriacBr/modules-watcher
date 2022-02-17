@@ -11,7 +11,6 @@ use glob::glob;
 pub struct FileItem {
     pub path: PathBuf,
     pub direct_deps: Vec<String>,
-    pub checksum: u32,
 }
 
 impl FileItem {
@@ -19,7 +18,6 @@ impl FileItem {
         FileItem {
             path: PathBuf::from(&self.path),
             direct_deps: self.direct_deps.iter().map(|x| String::from(x)).collect(),
-            checksum: 0,
         }
     }
 
@@ -73,7 +71,7 @@ lazy_static! {
     static ref DEFAULT_SUPPATH_ESM: SupportedPath = SupportedPath::ESM(DEFAULT_JS_EXTS.clone());
     static ref DEFAULT_SUPPATH_DYN_ESM: SupportedPath = SupportedPath::DYN_ESM_REQ(DEFAULT_JS_EXTS.clone());
 }
-fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a DashMap<String, FileItem>, opts: &Option<MakeEntriesOptions>) -> Option<Ref<'a, String, FileItem>> {
+pub fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a DashMap<String, FileItem>, opts: &Option<MakeEntriesOptions>) -> Option<Ref<'a, String, FileItem>> {
     let key = file_path.to_str().unwrap();
     if store.contains_key(key) {
         return Some(store.get(key).unwrap());
@@ -106,12 +104,10 @@ fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a
     store.insert(key.to_string(), FileItem {
         path: PathBuf::from(&file_path),
         direct_deps: Vec::new(),
-        checksum: 0,
     });
 
     // Scan file for imports
     let content = read_to_string(&file_path).expect(&("Couldn't read file: ".to_owned() + file_path.to_str().unwrap()));
-    store.get_mut(key).unwrap().checksum = crc32fast::hash(content.as_bytes());
 
     let mut captures: Vec<CaptureMatches> = Vec::new();
     for path_type in supported_paths {
@@ -415,30 +411,5 @@ mod tests {
         let dep_1_path_str = &res.direct_deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
-    }
-
-    #[test]
-    fn make_user_file_test_checksum() {
-        let path = PROJECT_A_PATH.join("timestamp.js");
-
-        std::fs::write(&path, "bye world").unwrap();
-
-        let store1 = DashMap::new();
-        let res1 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store1, &None).unwrap();
-        let checksum_1 = res1.checksum;
-
-        std::fs::write(&path, "hello world").unwrap();
-
-        let store2 = DashMap::new();
-        let res2 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store2, &None).unwrap();
-        let checksum_2 = res2.checksum;
-
-        let store3 = DashMap::new();
-        let res3 = make_user_file(&path, PROJECT_A_PATH.as_path(), &store3, &None).unwrap();
-        let checksum_3 = res3.checksum;
-
-        assert_eq!(checksum_1 > 0, true);
-        assert_eq!(checksum_2 != checksum_1, true);
-        assert_eq!(checksum_2 == checksum_3, true);
     }
 }

@@ -20,18 +20,23 @@ lazy_static! {
         static ref THREEJS_PATH: PathBuf = CWD.join("tests/fixtures/three_js");
     }
 
-fn bench_make_entries(c: &mut Criterion) {
-    let mut group = c.benchmark_group("make_entries");
-    group.bench_function("three_js (all supported paths)", |b| b.iter(|| {
-        entry::make_entries(Vec::new(), Some(vec!["**/*.js"]), THREEJS_PATH.to_path_buf(), None);
+fn bench_make_changes(c: &mut Criterion) {
+    let watcher = Watcher::setup(SetupOptions {
+        project: "threejs".to_string(),
+        project_root: THREEJS_PATH.to_str().unwrap().to_string(),
+        glob_entries: Some(vec!["**/*.js".to_string()]),
+        entries: None,
+        cache_dir: None,
+    });
+    let mut group = c.benchmark_group("make_changes");
+    group.bench_function("three_js (first_run)", |b| b.iter(|| {
+        watcher.makeChanges();
     }));
-    group.bench_function("three_js (only ESM .js)", |b| b.iter(|| {
-        entry::make_entries(Vec::new(), Some(vec!["**/*.js"]), THREEJS_PATH.to_path_buf(), Some(MakeEntriesOptions {
-            supported_paths: vec![entry::SupportedPath::ESM(vec!["js".to_string()])]
-        }));
+    group.bench_function("three_js (second_run)", |b| b.iter(|| {
+        watcher.makeChanges();
     }));
     group.finish();
 }
 
-criterion_group!(benches, bench_make_entries);
+criterion_group!(benches, bench_make_changes);
 criterion_main!(benches);
