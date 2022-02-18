@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, collections::HashMap, io::{BufReader, BufRead}};
 use dashmap::DashMap;
-use crate::entry::{FileItem, make_entries, make_user_file, MakeEntriesOptions};
+use crate::entry::{FileItem, make_entries, make_user_file};
 use rayon::prelude::*;
 
 #[napi(object)]
@@ -53,8 +53,47 @@ impl Watcher {
         make_user_file(&path, std::path::Path::new(project_root), &self.store, &None).unwrap();
     }
 
+    fn get_checksums_cache(&self) -> HashMap<String, u32>{
+        let path = PathBuf::from(self.cache_dir.clone()).join("checksums");
+        if !path.exists() {
+            return HashMap::new();
+        }
+        
+        let mut map: HashMap<String, u32> = HashMap::new();
+
+        let file = std::fs::File::open(path).unwrap();
+        let reader = BufReader::new(file);
+
+        for line in reader.lines() {
+            let ln = line.unwrap();
+            let slots: Vec<&str> = ln.split_whitespace().collect();
+            let path = slots[0];
+            let checksum = str::parse::<u32>(slots[1]).unwrap();
+            map.insert(path.to_string(), checksum);
+        }
+
+        map
+    }
+
+    fn set_checksum_cache(&self, checksum_store: &DashMap<String, u32>) {
+        let mut result = String::from("");
+        for ref_multi in checksum_store {
+            result += &format!("{} {}\n", ref_multi.key(), ref_multi.value());
+        }
+        
+        let dir = PathBuf::from(self.cache_dir.clone());
+        if !dir.exists() {
+            std::fs::create_dir(&dir);
+        }
+        let path = dir.join("checksums");
+        std::fs::write(path, result.trim_end()).unwrap();
+    }
+
     #[napi]
-    pub fn makeChanges(&self) -> Vec<EntryChange> {
+    pub fn make_changes(&self) -> Vec<EntryChange> {
+        let old_checksum_store = self.get_checksums_cache();
+        let new_checksum_store: DashMap<String, u32> = DashMap::new();
+
         let changes: Vec<EntryChange> = self.entries.par_iter().map(|x| {
             let mut tree: Vec<String> = Vec::new();
             let mut files = vec![x.path.to_str().unwrap().to_string()];
@@ -63,7 +102,9 @@ impl Watcher {
                 tree.insert(0, dep.to_string());
                 let is_entry = i == 0;
                 // Try to determine if the file changed
-                if let Some(changed) = self.is_file_changed(&dep, &self.cache_dir) {
+                let (checksum, maybe_changed) = self.get_file_state(&dep, &old_checksum_store);
+                new_checksum_store.insert(dep.to_string(), checksum);
+                if let Some(changed) = maybe_changed {
                     if changed {
                         if is_entry {
                             // if entry changed, recompute deps
@@ -87,29 +128,23 @@ impl Watcher {
             }
             None
         }).filter(|x| x.is_some()).map(|x| x.unwrap()).collect();
+
+        self.set_checksum_cache(&new_checksum_store);
+
         changes
     }
 
-    // THIS HAS SIDE-EFFECT
-    fn is_file_changed(&self, file_path: &str, cache_path: &str) -> Option<bool> {
-        let key = format!("checksum:{}", file_path);
+    fn get_file_state(&self, file_path: &str, checksum_store: &HashMap<String, u32>) -> (u32, Option<bool>) {
         let content = std::fs::read_to_string(&file_path).unwrap();
         let curr_checksum = crc32fast::hash(content.as_bytes());
-        match cacache::read_sync(cache_path, &key) {
-            Ok(data) => {
-                let parsed_data = str::parse::<u32>(&std::str::from_utf8(&data).unwrap()).unwrap();
-
-                cacache::write_sync(cache_path, &key, format!("{}", curr_checksum).as_bytes()).unwrap();
-
-                if curr_checksum != parsed_data {
-                    return Some(true);
-                }
-                Some(false)
+        if let Some(res) = checksum_store.get(file_path) {
+            if curr_checksum == *res {
+                (curr_checksum, Some(false))
+            } else {
+                (curr_checksum, Some(true))
             }
-            _ => {
-                cacache::write_sync(cache_path, &key, format!("{}", curr_checksum).as_bytes()).unwrap();
-                return None;
-            }
+        } else {
+            (curr_checksum, None)
         }
     }
 }
@@ -125,6 +160,7 @@ mod tests {
     lazy_static! {
         static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
         static ref PROJECT_A_PATH: PathBuf = CWD.join("tests/fixtures/project_a");
+        static ref THREEJS_PATH: PathBuf = CWD.join("tests/fixtures/three_js");
     }
 
     #[test]
@@ -139,6 +175,23 @@ mod tests {
             cache_dir: None,
         });
         assert_eq!(watcher.processed, true);
+    }
+
+    #[test]
+    fn make_changes_three_js() {
+        
+        let watcher = Watcher::setup(SetupOptions {
+            project: "Project threejs".to_string(),
+            project_root: THREEJS_PATH.to_str().unwrap().to_string(),
+            glob_entries: Some(vec!["**/*.js".to_string()]),
+            entries: None,
+            cache_dir: None,
+        });
+
+        let duration = std::time::Instant::now();
+        let changes = watcher.make_changes();
+        println!("Elapsed: {}ms", duration.elapsed().as_millis());
+        assert_eq!(1, 1);
     }
 
     #[test]
@@ -159,26 +212,26 @@ mod tests {
         } else {
             std::fs::create_dir(&watcher.cache_dir);
         }
-        let changes = watcher.makeChanges();
+        let changes = watcher.make_changes();
         assert_eq!(changes.len(), 2);
         assert_eq!(changes[0].change_type, "added".to_string());
         assert_eq!(changes[1].change_type, "added".to_string());
 
         // Second call, we expect no changes
-        let changes = watcher.makeChanges();
+        let changes = watcher.make_changes();
         assert_eq!(changes.len(), 0);
 
         // Third call after modifying a file. We expect changes
         let since_the_epoch = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH).unwrap();
         std::fs::write(path_1, format!("modified at: {}", since_the_epoch.as_millis()));
-        let changes = watcher.makeChanges();
+        let changes = watcher.make_changes();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].change_type, "modified".to_string());
 
         // 4th call, we modify a dep
         std::fs::write(PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(), format!("export const Z = {};", since_the_epoch.as_millis()));
-        let changes = watcher.makeChanges();
+        let changes = watcher.make_changes();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].change_type, "dep-modified".to_string());
         assert_eq!(changes[0].entry, path_2);
