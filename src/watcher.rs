@@ -35,12 +35,12 @@ impl Watcher {
     #[napi(factory)]
     pub fn setup(opts: SetupOptions) -> Self {
         let watcher_opts = opts.clone();
-        let entries_vec = opts.entries.unwrap_or(vec![]);
+        let entries_vec = opts.entries.unwrap_or_default();
         let project_root = opts.project_root;
-        let cache_dir = opts.cache_dir.unwrap_or(PathBuf::from(project_root.clone()).join("mw-cache").to_str().unwrap().to_string());
+        let cache_dir = opts.cache_dir.unwrap_or_else(|| PathBuf::from(project_root.clone()).join("mw-cache").to_str().unwrap().to_string());
 
-        let globs_vec = opts.glob_entries.unwrap_or(vec![]);
-        let entry_paths: Vec<PathBuf> = entries_vec.iter().map(|x| PathBuf::from(x)).collect();
+        let globs_vec = opts.glob_entries.unwrap_or_default();
+        let entry_paths: Vec<PathBuf> = entries_vec.iter().map(PathBuf::from).collect();
         let entry_globs: Vec<&str> = globs_vec.iter().map(|x| &x[..]).collect();
 
         let (store, entries) = make_entries(entry_paths, Some(entry_globs), PathBuf::from(project_root), None);
@@ -83,7 +83,7 @@ impl Watcher {
         
         let dir = PathBuf::from(self.cache_dir.clone());
         if !dir.exists() {
-            std::fs::create_dir(&dir);
+            std::fs::create_dir(&dir).unwrap_or_else(|_| panic!("Couldn't create cache directory at {}", dir.to_str().unwrap()));
         }
         let path = dir.join("checksums");
         std::fs::write(path, result.trim_end()).unwrap();
@@ -102,13 +102,13 @@ impl Watcher {
                 tree.insert(0, dep.to_string());
                 let is_entry = i == 0;
                 // Try to determine if the file changed
-                let (checksum, maybe_changed) = self.get_file_state(&dep, &old_checksum_store);
+                let (checksum, maybe_changed) = self.get_file_state(dep, &old_checksum_store);
                 new_checksum_store.insert(dep.to_string(), checksum);
                 if let Some(changed) = maybe_changed {
                     if changed {
                         if is_entry {
                             // if entry changed, recompute deps
-                            self.make_file_deps(&dep);
+                            self.make_file_deps(dep);
                         }
                         return Some(EntryChange {
                             change_type: if is_entry { "modified".to_string() } else { "dep-modified".to_string() },

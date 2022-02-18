@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::fs::*;
 use lazy_static::lazy_static;
-use regex::{CaptureMatches, Captures, Regex};
+use regex::{CaptureMatches, Regex};
 use rayon::prelude::*;
 use path_clean::{PathClean};
 use dashmap::{DashMap};
@@ -14,10 +14,10 @@ pub struct FileItem {
 }
 
 impl FileItem {
-    pub fn clone(&self) -> FileItem {
+    pub fn clone_item(&self) -> FileItem {
         FileItem {
             path: PathBuf::from(&self.path),
-            direct_deps: self.direct_deps.iter().map(|x| String::from(x)).collect(),
+            direct_deps: self.direct_deps.iter().map(String::from).collect(),
         }
     }
 
@@ -25,7 +25,7 @@ impl FileItem {
         let mut result: Vec<String> = Vec::new();
         self.direct_deps.iter().for_each(|d| {
             result.push(d.to_owned());
-            let item_ref = store.get(d).expect(&format!("Couldn't find {} inside the store", d));
+            let item_ref = store.get(d).unwrap_or_else(|| panic!("Couldn't find {} inside the store", d));
             result.extend(item_ref.get_all_deps(store).iter().map(|x| x.to_owned()));
         });
         result
@@ -38,15 +38,15 @@ pub struct MakeEntriesOptions {
 
 pub enum SupportedPath {
     ESM(Vec<String>),
-    DYN_ESM_REQ(Vec<String>),
+    DynEsmReq(Vec<String>),
 }
 
 pub fn make_entries(entry_paths: Vec<PathBuf>, entry_globs: Option<Vec<&str>>, project_path: PathBuf, opts: Option<MakeEntriesOptions>) -> (DashMap<String, FileItem>, Vec<FileItem>) {
     let store = DashMap::new();
-    let mut paths: Vec<PathBuf> = entry_paths.clone();
+    let mut paths: Vec<PathBuf> = entry_paths;
 
-    for glob_str in entry_globs.unwrap_or(vec![]) {
-        let full_glob = if glob_str.starts_with("/") {
+    for glob_str in entry_globs.unwrap_or_default() {
+        let full_glob = if glob_str.starts_with('/') {
             glob_str.to_owned()
         } else {
             project_path.join(glob_str).to_str().unwrap().to_owned()
@@ -58,7 +58,7 @@ pub fn make_entries(entry_paths: Vec<PathBuf>, entry_globs: Option<Vec<&str>>, p
         make_user_file(p, &project_path, &store, &opts);
     });
     let entry_path_str_list: Vec<String> = paths.iter().map(|x| x.to_str().unwrap().to_string()).collect();
-    let entries = entry_path_str_list.iter().map(|x| store.get(x).unwrap().clone()).collect();
+    let entries = entry_path_str_list.iter().map(|x| store.get(x).unwrap().clone_item()).collect();
     (store, entries)
 }
 
@@ -69,16 +69,16 @@ lazy_static! {
 
     static ref DEFAULT_JS_EXTS: Vec<String> = vec!["ts", "js", "cjs", "mjs"].iter().map(|x| x.to_string()).collect();
     static ref DEFAULT_SUPPATH_ESM: SupportedPath = SupportedPath::ESM(DEFAULT_JS_EXTS.clone());
-    static ref DEFAULT_SUPPATH_DYN_ESM: SupportedPath = SupportedPath::DYN_ESM_REQ(DEFAULT_JS_EXTS.clone());
+    static ref DEFAULT_SUPPATH_DYN_ESM: SupportedPath = SupportedPath::DynEsmReq(DEFAULT_JS_EXTS.clone());
 }
-pub fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store: &'a DashMap<String, FileItem>, opts: &Option<MakeEntriesOptions>) -> Option<Ref<'a, String, FileItem>> {
+pub fn make_user_file<'a>(file_path: &'a Path, project_path: &'a Path, store: &'a DashMap<String, FileItem>, opts: &Option<MakeEntriesOptions>) -> Option<Ref<'a, String, FileItem>> {
     let key = file_path.to_str().unwrap();
     if store.contains_key(key) {
-        return Some(store.get(key).unwrap());
+        return Some(store.get(key).unwrap_or_else(|| panic!("Couldn't read {} inside the store", key)));
     }
 
     let supported_paths: Vec<&SupportedPath> = match opts {
-        Some(opts_val) => opts_val.supported_paths.iter().map(|x| x).collect(),
+        Some(opts_val) => opts_val.supported_paths.iter().collect(),
         _ => vec![&DEFAULT_SUPPATH_ESM, &DEFAULT_SUPPATH_DYN_ESM]
     };
     let mut supported_exts: Vec<&String> = Vec::new();
@@ -88,11 +88,11 @@ pub fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store:
         match *supported_path {
             SupportedPath::ESM(exts) => {
                 esm_exts = exts;
-                supported_exts.extend(exts.iter().map(|x| x));
+                supported_exts.extend(exts.iter());
             }
-            SupportedPath::DYN_ESM_REQ(exts) => {
+            SupportedPath::DynEsmReq(exts) => {
                 dyn_esm_exts = exts;
-                supported_exts.extend(exts.iter().map(|x| x));
+                supported_exts.extend(exts.iter());
             }
         }
     }
@@ -107,7 +107,7 @@ pub fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store:
     });
 
     // Scan file for imports
-    let content = read_to_string(&file_path).expect(&("Couldn't read file: ".to_owned() + file_path.to_str().unwrap()));
+    let content = read_to_string(&file_path).unwrap_or_else(|_| panic!("Couldn't read file {} ", file_path.to_str().unwrap()));
 
     let mut captures: Vec<CaptureMatches> = Vec::new();
     for path_type in supported_paths {
@@ -118,8 +118,8 @@ pub fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store:
                     captures.push(UNNAMED_MODULE_RE.captures_iter(&content));
                 }
             }
-            SupportedPath::DYN_ESM_REQ(_) => {
-                if esm_exts.iter().any(|x| x.eq(&file_ext)) {
+            SupportedPath::DynEsmReq(_) => {
+                if dyn_esm_exts.iter().any(|x| x.eq(&file_ext)) {
                     captures.push(REQUIRE_DYNIMP_RE.captures_iter(&content));
                 }
             }
@@ -146,7 +146,7 @@ pub fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store:
                 }
             }
             // If the imported file has no extension, we need to resolve it
-            else if let None = path_buf.extension() {
+            else if path_buf.extension().is_none() {
                 if let Some(found) = resolve_with_extension(&path_buf) {
                     path_buf = found;
                 } else {
@@ -154,11 +154,12 @@ pub fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store:
                 }
             }
             make_user_file(&path_buf, project_path, store, opts);
-            store.get_mut(key).unwrap().direct_deps.push(path_buf.to_str().unwrap().to_string());
+            store.get_mut(key).unwrap_or_else(|| panic!("Couldn't read {} inside the store", key))
+                .direct_deps.push(path_buf.to_str().unwrap().to_string());
         }
     }
 
-    Some(store.get(key).unwrap())
+    Some(store.get(key).unwrap_or_else(|| panic!("Couldn't read {} inside the store", key)))
 }
 
 /// Take a path of a file without extension and resolve it's extension.
@@ -170,18 +171,16 @@ pub fn make_user_file<'a>(file_path: &'a PathBuf, project_path: &'a Path, store:
 /// This will return the path of the first file that:
 /// * matches the file_name of the argument
 /// * possess an extension
-fn resolve_with_extension(path: &PathBuf) -> Option<PathBuf> {
+fn resolve_with_extension(path: &Path) -> Option<PathBuf> {
     let file_name = path.file_stem().unwrap();
     let files = path.parent().unwrap().read_dir().unwrap();
-    for file in files.into_iter() {
-        if let Ok(entry) = file {
-            let entry_path = entry.path();
-            if entry_path.is_file() {
-                if let Some(ext) = entry_path.extension() {
-                    let name = entry_path.file_stem().unwrap().to_str().unwrap();
-                    if name.eq(file_name) {
-                        return Some(PathBuf::from(entry.path()));
-                    }
+    for entry in files.flatten() {
+        let entry_path = entry.path();
+        if entry_path.is_file() {
+            if let Some(_ext) = entry_path.extension() {
+                let name = entry_path.file_stem().unwrap().to_str().unwrap();
+                if name.eq(file_name) {
+                    return Some(entry.path());
                 }
             }
         }
@@ -195,20 +194,18 @@ fn resolve_with_extension(path: &PathBuf) -> Option<PathBuf> {
 /// let index_path = resolve_index(&path).unwrap().to_str();
 /// // "/stuff/project/foo/index.ts"
 /// ```
-fn resolve_index(path: &PathBuf) -> Option<PathBuf> {
+fn resolve_index(path: &Path) -> Option<PathBuf> {
     if !path.is_dir() {
         return None;
     }
     let files = path.read_dir().unwrap();
-    for file in files.into_iter() {
-        if let Ok(entry) = file {
-            let entry_path = entry.path();
-            if entry_path.is_file() {
-                if let Some(ext) = entry_path.extension() {
-                    let name = entry_path.file_stem().unwrap().to_str().unwrap();
-                    if name.eq("index") {
-                        return Some(PathBuf::from(entry.path()));
-                    }
+    for entry in files.flatten() {
+        let entry_path = entry.path();
+        if entry_path.is_file() {
+            if let Some(_ext) = entry_path.extension() {
+                let name = entry_path.file_stem().unwrap().to_str().unwrap();
+                if name.eq("index") {
+                    return Some(entry.path());
                 }
             }
         }
