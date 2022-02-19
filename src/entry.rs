@@ -66,7 +66,7 @@ pub fn make_missing_entries(entry_paths: Vec<PathBuf>, entry_globs: Option<Vec<&
     paths.retain(|x| !store.contains_key(x.to_str().unwrap()));
 
     paths.par_iter().for_each(|p| {
-        make_user_file(p, &project_path, store, &opts);
+        make_file_item(p, &project_path, store, &opts);
     });
     let entry_path_str_list: Vec<String> = paths.iter().map(|x| x.to_str().unwrap().to_string()).collect();
     let entries = entry_path_str_list.iter().map(|x| store.get(x).unwrap().clone_item()).collect();
@@ -82,7 +82,7 @@ lazy_static! {
     static ref DEFAULT_SUPPATH_ESM: SupportedPath = SupportedPath::ESM(DEFAULT_JS_EXTS.clone());
     static ref DEFAULT_SUPPATH_DYN_ESM: SupportedPath = SupportedPath::DynEsmReq(DEFAULT_JS_EXTS.clone());
 }
-pub fn make_user_file<'a>(file_path: &'a Path, project_path: &'a Path, store: &'a DashMap<String, FileItem>, opts: &Option<MakeEntriesOptions>) -> Option<Ref<'a, String, FileItem>> {
+pub fn make_file_item<'a>(file_path: &'a Path, project_path: &'a Path, store: &'a DashMap<String, FileItem>, opts: &Option<MakeEntriesOptions>) -> Option<Ref<'a, String, FileItem>> {
     let key = file_path.to_str().unwrap();
     if store.contains_key(key) {
         return Some(store.get(key).unwrap_or_else(|| panic!("Couldn't read {} inside the store", key)));
@@ -166,7 +166,7 @@ pub fn make_user_file<'a>(file_path: &'a Path, project_path: &'a Path, store: &'
                 }
             }
             all_deps.push(path_buf.to_str().unwrap().to_string());
-            if let Some(file_ref) = make_user_file(&path_buf.clone(), project_path, store, opts) {
+            if let Some(file_ref) = make_file_item(&path_buf.clone(), project_path, store, opts) {
                 all_deps.extend(file_ref.deps.clone());
             }
         }
@@ -234,7 +234,7 @@ mod tests {
     use std::string::String;
     use dashmap::DashMap;
     use lazy_static::lazy_static;
-    use crate::entry::{make_entries, make_user_file, resolve_with_extension};
+    use crate::entry::{make_entries, make_file_item, resolve_with_extension};
 
     lazy_static! {
         static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
@@ -282,7 +282,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("relative_w_ext.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -296,7 +296,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("relative_wo_ext.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -310,7 +310,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("relative_w_index.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -324,7 +324,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("c/relative_parent.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -338,7 +338,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("project_path.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -352,7 +352,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("x.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 2 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -368,7 +368,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("many.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 2 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -384,7 +384,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("export.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -398,7 +398,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("require.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
@@ -412,7 +412,7 @@ mod tests {
         let store = DashMap::new();
         let mut path = PROJECT_A_PATH.join("dyn_import.js");
 
-        let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+        let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();

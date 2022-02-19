@@ -1,7 +1,7 @@
 use std::{path::PathBuf, collections::HashMap, io::{BufReader, BufRead}};
 use std::path::Path;
 use dashmap::DashMap;
-use crate::entry::{FileItem, make_entries, make_missing_entries, make_user_file};
+use crate::entry::{FileItem, make_entries, make_missing_entries, make_file_item};
 use rayon::prelude::*;
 
 #[napi(object)]
@@ -70,7 +70,7 @@ impl Watcher {
     fn make_file_deps(&self, file_path: &str) {
         let project_root = &self.setup_options.project_root;
         let path = PathBuf::from(file_path);
-        make_user_file(&path, std::path::Path::new(project_root), &self.store, &None).unwrap();
+        make_file_item(&path, std::path::Path::new(project_root), &self.store, &None).unwrap();
     }
 
     fn get_checksums_cache(&self) -> HashMap<String, u32> {
