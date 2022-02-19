@@ -1,6 +1,7 @@
 use std::{path::PathBuf, collections::HashMap, io::{BufReader, BufRead}};
+use std::path::Path;
 use dashmap::DashMap;
-use crate::entry::{FileItem, make_entries, make_user_file};
+use crate::entry::{FileItem, make_entries, make_missing_entries, make_user_file};
 use rayon::prelude::*;
 
 #[napi(object)]
@@ -19,6 +20,14 @@ pub struct EntryChange {
     pub change_type: String,
     pub entry: String,
     pub tree: Option<Vec<String>>,
+}
+
+#[derive(PartialEq)]
+pub enum FileState {
+    NotModified,
+    Modified,
+    Created,
+    Deleted,
 }
 
 #[napi(js_name = "ModulesWatcher")]
@@ -47,18 +56,29 @@ impl Watcher {
         Watcher { setup_options: watcher_opts, store, entries, processed: true, cache_dir }
     }
 
-    pub fn make_file_deps(&self, file_path: &str) {
+    fn update_store(&self) {
+        let opts = &self.setup_options;
+        let entries_vec = opts.entries.clone().unwrap_or_default();
+        let project_root = (&opts.project_root).to_string();
+        let globs_vec = opts.glob_entries.clone().unwrap_or_default();
+        let entry_paths: Vec<PathBuf> = entries_vec.iter().map(PathBuf::from).collect();
+        let entry_globs: Vec<&str> = globs_vec.iter().map(|x| &x[..]).collect();
+
+        make_missing_entries(entry_paths, Some(entry_globs), PathBuf::from(project_root), &self.store, None);
+    }
+
+    fn make_file_deps(&self, file_path: &str) {
         let project_root = &self.setup_options.project_root;
         let path = PathBuf::from(file_path);
         make_user_file(&path, std::path::Path::new(project_root), &self.store, &None).unwrap();
     }
 
-    fn get_checksums_cache(&self) -> HashMap<String, u32>{
+    fn get_checksums_cache(&self) -> HashMap<String, u32> {
         let path = PathBuf::from(self.cache_dir.clone()).join("checksums");
         if !path.exists() {
             return HashMap::new();
         }
-        
+
         let mut map: HashMap<String, u32> = HashMap::new();
 
         let file = std::fs::File::open(path).unwrap();
@@ -80,7 +100,7 @@ impl Watcher {
         for ref_multi in checksum_store {
             result += &format!("{} {}\n", ref_multi.key(), ref_multi.value());
         }
-        
+
         let dir = PathBuf::from(self.cache_dir.clone());
         if !dir.exists() {
             std::fs::create_dir(&dir).unwrap_or_else(|_| panic!("Couldn't create cache directory at {}", dir.to_str().unwrap()));
@@ -94,18 +114,36 @@ impl Watcher {
         let old_checksum_store = self.get_checksums_cache();
         let new_checksum_store: DashMap<String, u32> = DashMap::new();
 
+        self.update_store();
+
+        // update self.entries when store change
         let changes: Vec<EntryChange> = self.entries.par_iter().map(|x| {
             let mut tree: Vec<String> = Vec::new();
             let mut files = vec![x.path.to_str().unwrap().to_string()];
-            files.extend(x.direct_deps.clone());
-            for (i, dep) in files.iter().enumerate() {
+            files.extend(x.deps.clone());
+            let entry_changes: Vec<Option<EntryChange>> = files.iter().enumerate().map(|(i, dep)| {
                 tree.insert(0, dep.to_string());
                 let is_entry = i == 0;
                 // Try to determine if the file changed
-                let (checksum, maybe_changed) = self.get_file_state(dep, &old_checksum_store);
+                let (checksum, state) = self.get_file_state(dep, &old_checksum_store);
+                if state == FileState::Deleted {
+                    // self.store.remove(dep);
+                    return Some(EntryChange {
+                        change_type: if is_entry { "deleted".to_string() } else { "dep-deleted".to_string() },
+                        entry: x.path.to_str().unwrap().to_string(),
+                        tree: if is_entry { None } else { Some(tree.clone()) },
+                    });
+                }
                 new_checksum_store.insert(dep.to_string(), checksum);
-                if let Some(changed) = maybe_changed {
-                    if changed {
+                match state {
+                    FileState::Created => {
+                        return Some(EntryChange {
+                            change_type: if is_entry { "added".to_string() } else { "dep-added".to_string() },
+                            entry: x.path.to_str().unwrap().to_string(),
+                            tree: if is_entry { None } else { Some(tree.clone()) },
+                        });
+                    }
+                    FileState::Modified => {
                         if is_entry {
                             // if entry changed, recompute deps
                             self.make_file_deps(dep);
@@ -113,38 +151,34 @@ impl Watcher {
                         return Some(EntryChange {
                             change_type: if is_entry { "modified".to_string() } else { "dep-modified".to_string() },
                             entry: x.path.to_str().unwrap().to_string(),
-                            tree: Some(tree.clone()),
+                            tree: if is_entry { None } else { Some(tree.clone()) },
                         });
                     }
+                    _ => None
                 }
-                // If the file wasn't even cached, we continue unless file = entry, in which case that mean it's a new file
-                else if is_entry {
-                    return Some(EntryChange {
-                        change_type: "added".to_string(),
-                        entry: x.path.to_str().unwrap().to_string(),
-                        tree: None,
-                    });
-                }
-            }
-            None
-        }).filter(|x| x.is_some()).map(|x| x.unwrap()).collect();
+            }).collect();
+            entry_changes
+        }).flatten().filter(|x| x.is_some()).map(|x| x.unwrap()).collect();
 
         self.set_checksum_cache(&new_checksum_store);
 
         changes
     }
 
-    fn get_file_state(&self, file_path: &str, checksum_store: &HashMap<String, u32>) -> (u32, Option<bool>) {
+    fn get_file_state(&self, file_path: &str, checksum_store: &HashMap<String, u32>) -> (u32, FileState) {
+        if !Path::new(file_path).exists() {
+            return (0, FileState::Deleted);
+        }
         let content = std::fs::read_to_string(&file_path).unwrap();
         let curr_checksum = crc32fast::hash(content.as_bytes());
         if let Some(res) = checksum_store.get(file_path) {
             if curr_checksum == *res {
-                (curr_checksum, Some(false))
+                (curr_checksum, FileState::NotModified)
             } else {
-                (curr_checksum, Some(true))
+                (curr_checksum, FileState::Modified)
             }
         } else {
-            (curr_checksum, None)
+            (curr_checksum, FileState::Created)
         }
     }
 }
@@ -179,7 +213,6 @@ mod tests {
 
     #[test]
     fn make_changes_three_js() {
-        
         let watcher = Watcher::setup(SetupOptions {
             project: "Project threejs".to_string(),
             project_root: THREEJS_PATH.to_str().unwrap().to_string(),
@@ -213,9 +246,10 @@ mod tests {
             std::fs::create_dir(&watcher.cache_dir);
         }
         let changes = watcher.make_changes();
-        assert_eq!(changes.len(), 2);
+        assert_eq!(changes.len(), 3);
         assert_eq!(changes[0].change_type, "added".to_string());
         assert_eq!(changes[1].change_type, "added".to_string());
+        assert_eq!(changes[2].change_type, "dep-added".to_string());
 
         // Second call, we expect no changes
         let changes = watcher.make_changes();
@@ -234,6 +268,20 @@ mod tests {
         let changes = watcher.make_changes();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].change_type, "dep-modified".to_string());
+        assert_eq!(changes[0].entry, path_2);
+
+        // 5th call, we remove z
+        std::fs::remove_file(PROJECT_A_PATH.join("z.js")).unwrap();
+        let changes = watcher.make_changes();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].change_type, "dep-deleted".to_string());
+        assert_eq!(changes[0].entry, path_2);
+
+        // 6h call, we restore z
+        std::fs::write(PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(), format!("export const Z = {};", since_the_epoch.as_millis()));
+        let changes = watcher.make_changes();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].change_type, "dep-added".to_string());
         assert_eq!(changes[0].entry, path_2);
     }
 }

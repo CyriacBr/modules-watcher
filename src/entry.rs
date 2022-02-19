@@ -10,25 +10,29 @@ use glob::glob;
 
 pub struct FileItem {
     pub path: PathBuf,
-    pub direct_deps: Vec<String>,
+    pub deps: Vec<String>,
 }
 
 impl FileItem {
     pub fn clone_item(&self) -> FileItem {
         FileItem {
             path: PathBuf::from(&self.path),
-            direct_deps: self.direct_deps.iter().map(String::from).collect(),
+            deps: self.deps.iter().map(String::from).collect(),
         }
     }
 
-    pub fn get_all_deps(&self, store: &DashMap<String, FileItem>) -> Vec<String> {
-        let mut result: Vec<String> = Vec::new();
-        self.direct_deps.iter().for_each(|d| {
-            result.push(d.to_owned());
-            let item_ref = store.get(d).unwrap_or_else(|| panic!("Couldn't find {} inside the store", d));
-            result.extend(item_ref.get_all_deps(store).iter().map(|x| x.to_owned()));
-        });
-        result
+    pub fn get_entry(&self, store: &DashMap<String, FileItem>) -> Option<String> {
+        for item in store {
+            if item.deps.is_empty() && item.path.eq(&self.path) {
+                return Some(self.path.to_str().unwrap().to_string());
+            }
+            for dep in &item.deps {
+                if dep.eq(&self.path.to_str().unwrap().to_string()) {
+                    return Some(item.path.to_str().unwrap().to_string());
+                }
+            }
+        }
+        None
     }
 }
 
@@ -43,6 +47,11 @@ pub enum SupportedPath {
 
 pub fn make_entries(entry_paths: Vec<PathBuf>, entry_globs: Option<Vec<&str>>, project_path: PathBuf, opts: Option<MakeEntriesOptions>) -> (DashMap<String, FileItem>, Vec<FileItem>) {
     let store = DashMap::new();
+    let entries = make_missing_entries(entry_paths, entry_globs, project_path, &store, opts);
+    (store, entries)
+}
+
+pub fn make_missing_entries(entry_paths: Vec<PathBuf>, entry_globs: Option<Vec<&str>>, project_path: PathBuf, store: &DashMap<String, FileItem>, opts: Option<MakeEntriesOptions>) -> Vec<FileItem> {
     let mut paths: Vec<PathBuf> = entry_paths;
 
     for glob_str in entry_globs.unwrap_or_default() {
@@ -54,12 +63,14 @@ pub fn make_entries(entry_paths: Vec<PathBuf>, entry_globs: Option<Vec<&str>>, p
         paths.extend(glob(&full_glob).expect("Failed to read glob pattern").map(|x| x.unwrap()));
     }
 
+    paths.retain(|x| !store.contains_key(x.to_str().unwrap()));
+
     paths.par_iter().for_each(|p| {
-        make_user_file(p, &project_path, &store, &opts);
+        make_user_file(p, &project_path, store, &opts);
     });
     let entry_path_str_list: Vec<String> = paths.iter().map(|x| x.to_str().unwrap().to_string()).collect();
     let entries = entry_path_str_list.iter().map(|x| store.get(x).unwrap().clone_item()).collect();
-    (store, entries)
+    entries
 }
 
 lazy_static! {
@@ -103,8 +114,9 @@ pub fn make_user_file<'a>(file_path: &'a Path, project_path: &'a Path, store: &'
 
     store.insert(key.to_string(), FileItem {
         path: PathBuf::from(&file_path),
-        direct_deps: Vec::new(),
+        deps: Vec::new(),
     });
+    let mut all_deps: Vec<String> = Vec::new();
 
     // Scan file for imports
     let content = read_to_string(&file_path).unwrap_or_else(|_| panic!("Couldn't read file {} ", file_path.to_str().unwrap()));
@@ -153,11 +165,14 @@ pub fn make_user_file<'a>(file_path: &'a Path, project_path: &'a Path, store: &'
                     panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
                 }
             }
-            make_user_file(&path_buf, project_path, store, opts);
-            store.get_mut(key).unwrap_or_else(|| panic!("Couldn't read {} inside the store", key))
-                .direct_deps.push(path_buf.to_str().unwrap().to_string());
+            all_deps.push(path_buf.to_str().unwrap().to_string());
+            if let Some(file_ref) = make_user_file(&path_buf.clone(), project_path, store, opts) {
+                all_deps.extend(file_ref.deps.clone());
+            }
         }
     }
+    store.get_mut(key).unwrap_or_else(|| panic!("Couldn't read {} inside the store", key))
+        .deps = all_deps;
 
     Some(store.get(key).unwrap_or_else(|| panic!("Couldn't read {} inside the store", key)))
 }
@@ -268,10 +283,10 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("relative_w_ext.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        assert_eq!(res.direct_deps.len(), 1 as usize);
+        assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.direct_deps[0];
+        let dep_1_path_str = &res.deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -282,10 +297,10 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("relative_wo_ext.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        assert_eq!(res.direct_deps.len(), 1 as usize);
+        assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.direct_deps[0];
+        let dep_1_path_str = &res.deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -296,10 +311,10 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("relative_w_index.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        assert_eq!(res.direct_deps.len(), 1 as usize);
+        assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.direct_deps[0];
+        let dep_1_path_str = &res.deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("c/index.js").to_str().unwrap());
     }
@@ -310,10 +325,10 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("c/relative_parent.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        assert_eq!(res.direct_deps.len(), 1 as usize);
+        assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.direct_deps[0];
+        let dep_1_path_str = &res.deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -324,10 +339,10 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("project_path.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        assert_eq!(res.direct_deps.len(), 1 as usize);
+        assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.direct_deps[0];
+        let dep_1_path_str = &res.deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("c/index.js").to_str().unwrap());
     }
@@ -338,13 +353,11 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("x.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        let deps = res.get_all_deps(&store);
-        assert_eq!(res.direct_deps.len(), 1 as usize);
-        assert_eq!(deps.len(), 2 as usize);
+        assert_eq!(res.deps.len(), 2 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &deps[0];
-        let dep_1_1_path_str = &deps[1];
+        let dep_1_path_str = &res.deps[0];
+        let dep_1_1_path_str = &res.deps[1];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("y.js").to_str().unwrap());
         assert_eq!(dep_1_1_path_str, PROJECT_A_PATH.join("z.js").to_str().unwrap());
@@ -356,13 +369,11 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("many.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        let deps = res.get_all_deps(&store);
-        assert_eq!(res.direct_deps.len(), 2 as usize);
-        assert_eq!(deps.len(), 2 as usize);
+        assert_eq!(res.deps.len(), 2 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &deps[0];
-        let dep_2_path_str = &deps[1];
+        let dep_1_path_str = &res.deps[0];
+        let dep_2_path_str = &res.deps[1];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("z.js").to_str().unwrap());
         assert_eq!(dep_2_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
@@ -374,10 +385,10 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("export.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        assert_eq!(res.direct_deps.len(), 1 as usize);
+        assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.direct_deps[0];
+        let dep_1_path_str = &res.deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -388,10 +399,10 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("require.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        assert_eq!(res.direct_deps.len(), 1 as usize);
+        assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.direct_deps[0];
+        let dep_1_path_str = &res.deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -402,10 +413,10 @@ mod tests {
         let mut path = PROJECT_A_PATH.join("dyn_import.js");
 
         let res = make_user_file(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-        assert_eq!(res.direct_deps.len(), 1 as usize);
+        assert_eq!(res.deps.len(), 1 as usize);
 
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.direct_deps[0];
+        let dep_1_path_str = &res.deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
