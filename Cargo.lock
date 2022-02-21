@@ -500,6 +500,7 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
+ "notify",
  "path-clean",
  "rayon",
  "regex",

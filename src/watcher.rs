@@ -1,6 +1,11 @@
 use std::{path::PathBuf, collections::HashMap, io::{BufReader, BufRead}};
+use std::collections::HashSet;
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{TryRecvError};
 use dashmap::DashMap;
+use hotwatch::Event;
 use crate::entry::{FileItem, make_entries, make_missing_entries, make_file_item};
 use rayon::prelude::*;
 
@@ -37,6 +42,7 @@ pub struct Watcher {
     entries: Vec<FileItem>,
     pub processed: bool,
     pub cache_dir: String,
+    stop_watch_flag: Arc<AtomicBool>,
 }
 
 #[napi]
@@ -53,7 +59,7 @@ impl Watcher {
         let entry_globs: Vec<&str> = globs_vec.iter().map(|x| &x[..]).collect();
 
         let (store, entries) = make_entries(entry_paths, Some(entry_globs), PathBuf::from(project_root), None);
-        Watcher { setup_options: watcher_opts, store, entries, processed: true, cache_dir }
+        Watcher { setup_options: watcher_opts, store, entries, processed: true, cache_dir, stop_watch_flag: Arc::new(AtomicBool::new(false)) }
     }
 
     fn update_store(&self) {
@@ -181,6 +187,86 @@ impl Watcher {
             (curr_checksum, FileState::Created)
         }
     }
+
+    #[napi]
+    pub fn get_dirs_to_watch(&self) -> Vec<String> {
+        let mut set = HashSet::new();
+        for ref_multi in &self.store {
+            let parent = ref_multi.path.parent().unwrap();
+            set.insert(parent.to_str().unwrap().to_string());
+        }
+        set.into_iter().collect()
+    }
+
+    pub fn watch<F>(&mut self, retrieve_item: bool, on_event: F)
+        where
+            F: Fn(Option<FileItem>) -> Result<(), ()> + std::marker::Sync + std::marker::Send + 'static {
+        use notify::{Watcher, RecursiveMode, watcher};
+        use std::sync::mpsc::channel;
+
+        let paths = self.get_dirs_to_watch();
+        let store: DashMap<String, FileItem> = DashMap::new();
+        for ref_multi in &self.store {
+            store.insert(ref_multi.key().to_string(), ref_multi.value().clone_item());
+        }
+
+        let flag = self.stop_watch_flag.clone();
+        let on_event_arced = Arc::new(on_event);
+        std::thread::spawn(move || {
+            let (tx, rx) = channel();
+            let mut watcher = watcher(tx, std::time::Duration::from_millis(200)).unwrap();
+
+            for path in &paths {
+                watcher.watch(&path, RecursiveMode::Recursive).unwrap();
+            }
+
+            let on_event_cb = on_event_arced.clone();
+            let event_handler = |path: PathBuf| {
+                if !retrieve_item {
+                    on_event_cb(None);
+                } else {
+                    if let Some(item) = store.get(path.to_str().unwrap()) {
+                        let entries = item.get_entries(&store);
+                        for entry in entries {
+                            let entry_item = store.get(&entry).unwrap();
+                            on_event_cb(Some(entry_item.clone_item()));
+                        }
+                    }
+                }
+            };
+
+            loop {
+                if flag.load(Ordering::Relaxed) {
+                    println!("Quit watching");
+                    flag.store(false, Ordering::Relaxed);
+                    for path in &paths {
+                        watcher.unwatch(path).unwrap();
+                    }
+                    break;
+                }
+                match rx.try_recv() {
+                    Ok(event) => {
+                        println!("(event): {:?}", event);
+                        match event {
+                            Event::Write(path) => {
+                                event_handler(path);
+                            }
+                            _ => {}
+                        }
+                    }
+                    Err(TryRecvError::Empty) => {}
+                    Err(e) => println!("watch error: {:?}", e),
+                }
+            }
+        });
+
+        println!("listening...");
+    }
+
+    pub fn stop_watching(&self) {
+        println!("quit flag set");
+        self.stop_watch_flag.store(true, Ordering::Relaxed);
+    }
 }
 
 
@@ -189,6 +275,8 @@ mod tests {
     use lazy_static::lazy_static;
     use crate::watcher::{SetupOptions, Watcher};
     use std::path::{Path, PathBuf};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::UNIX_EPOCH;
 
     lazy_static! {
@@ -283,5 +371,33 @@ mod tests {
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].change_type, "dep-added".to_string());
         assert_eq!(changes[0].entry, path_2);
+    }
+
+    #[test]
+    fn watch_test() {
+        let path_1 = PROJECT_A_PATH.join("y2.js").to_str().unwrap().to_string();
+        let mut watcher = Watcher::setup(SetupOptions {
+            project: "Project A".to_string(),
+            project_root: PROJECT_A_PATH.to_str().unwrap().to_string(),
+            glob_entries: None,
+            entries: Some(vec![path_1]),
+            cache_dir: None,
+        });
+        assert_eq!(watcher.processed, true);
+
+        let called = Arc::new(AtomicBool::new(false)).clone();
+        let called_thread = called.clone();
+        watcher.watch(true,  move |x| {
+            called_thread.store(true,  Ordering::Relaxed);
+            Ok(())
+        });
+        // We modify a dep of y
+        let since_the_epoch = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH).unwrap();
+        std::fs::write(PROJECT_A_PATH.join("z2.js").to_str().unwrap().to_string(), format!("export const Z = {};", since_the_epoch.as_millis())).unwrap();
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        watcher.stop_watching();
+
+        assert_eq!(called.load(Ordering::Relaxed), true);
     }
 }

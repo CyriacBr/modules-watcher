@@ -21,18 +21,20 @@ impl FileItem {
         }
     }
 
-    pub fn get_entry(&self, store: &DashMap<String, FileItem>) -> Option<String> {
-        for item in store {
-            if item.deps.is_empty() && item.path.eq(&self.path) {
-                return Some(self.path.to_str().unwrap().to_string());
-            }
+    pub fn get_entries(&self, store: &DashMap<String, FileItem>) -> Vec<String> {
+        let res: Vec<String> = store.iter().filter(|item| {
             for dep in &item.deps {
                 if dep.eq(&self.path.to_str().unwrap().to_string()) {
-                    return Some(item.path.to_str().unwrap().to_string());
+                    return true;
                 }
             }
+            return false;
+        }).map(|item| item.path.to_str().unwrap().to_string()).collect();
+
+        if res.is_empty() {
+            return vec![self.path.to_str().unwrap().to_string()];
         }
-        None
+        return res;
     }
 }
 
