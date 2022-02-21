@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::fs::*;
 use lazy_static::lazy_static;
@@ -10,6 +11,12 @@ use glob::glob;
 
 pub struct FileItem {
     pub path: PathBuf,
+    pub deps: HashSet<String>,
+}
+
+#[napi(object)]
+pub struct NapiFileItem {
+    pub path: String,
     pub deps: Vec<String>,
 }
 
@@ -35,6 +42,13 @@ impl FileItem {
             return vec![self.path.to_str().unwrap().to_string()];
         }
         res
+    }
+
+    pub fn to_napi(&self) -> NapiFileItem {
+        NapiFileItem {
+            path: self.path.to_str().unwrap().to_string(),
+            deps: self.deps.iter().map(String::from).collect()
+        }
     }
 }
 
@@ -116,9 +130,9 @@ pub fn make_file_item<'a>(file_path: &'a Path, project_path: &'a Path, store: &'
 
     store.insert(key.to_string(), FileItem {
         path: PathBuf::from(&file_path),
-        deps: Vec::new(),
+        deps: HashSet::new(),
     });
-    let mut all_deps: Vec<String> = Vec::new();
+    let mut all_deps: HashSet<String> = HashSet::new();
 
     // Scan file for imports
     let content = read_to_string(&file_path).unwrap_or_else(|_| panic!("Couldn't read file {} ", file_path.to_str().unwrap()));
@@ -167,7 +181,7 @@ pub fn make_file_item<'a>(file_path: &'a Path, project_path: &'a Path, store: &'
                     panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
                 }
             }
-            all_deps.push(path_buf.to_str().unwrap().to_string());
+            all_deps.insert(path_buf.to_str().unwrap().to_string());
             if let Some(file_ref) = make_file_item(&path_buf.clone(), project_path, store, opts) {
                 all_deps.extend(file_ref.deps.clone());
             }
@@ -287,8 +301,9 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
+        let dep_1_path_str = &deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -301,8 +316,9 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
+        let dep_1_path_str = &deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -315,8 +331,9 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
+        let dep_1_path_str = &deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("c/index.js").to_str().unwrap());
     }
@@ -329,8 +346,9 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
+        let dep_1_path_str = &deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -343,8 +361,9 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
+        let dep_1_path_str = &deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("c/index.js").to_str().unwrap());
     }
@@ -357,12 +376,13 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 2 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
-        let dep_1_1_path_str = &res.deps[1];
+        let dep_1_path_str = &deps[0];
+        let dep_1_1_path_str = &deps[1];
         assert_eq!(path_str, path.to_str().unwrap());
-        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("y.js").to_str().unwrap());
-        assert_eq!(dep_1_1_path_str, PROJECT_A_PATH.join("z.js").to_str().unwrap());
+        assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("z.js").to_str().unwrap());
+        assert_eq!(dep_1_1_path_str, PROJECT_A_PATH.join("y.js").to_str().unwrap());
     }
 
     #[test]
@@ -373,9 +393,10 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 2 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
-        let dep_2_path_str = &res.deps[1];
+        let dep_1_path_str = &deps[0];
+        let dep_2_path_str = &deps[1];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("z.js").to_str().unwrap());
         assert_eq!(dep_2_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
@@ -389,8 +410,9 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
+        let dep_1_path_str = &deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -403,8 +425,9 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
+        let dep_1_path_str = &deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
@@ -417,8 +440,9 @@ mod tests {
         let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
         assert_eq!(res.deps.len(), 1 as usize);
 
+        let deps: Vec<String> = res.deps.iter().map(String::from).collect();
         let path_str = res.path.to_str().unwrap();
-        let dep_1_path_str = &res.deps[0];
+        let dep_1_path_str = &deps[0];
         assert_eq!(path_str, path.to_str().unwrap());
         assert_eq!(dep_1_path_str, PROJECT_A_PATH.join("b.js").to_str().unwrap());
     }
