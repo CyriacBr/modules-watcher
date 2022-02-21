@@ -10,7 +10,7 @@ function arrayMin( array ) {
 
 	}
 
-	return min;
+	return min + 1;
 
 }
 

@@ -65,7 +65,7 @@ impl Watcher {
 
     #[napi]
     pub fn get_entries(&self) -> Vec<NapiFileItem> {
-        self.entries.iter().map(|x| x.to_napi()).collect() 
+        self.entries.iter().map(|x| x.to_napi()).collect()
     }
 
     fn update_store(&self) {
@@ -204,9 +204,9 @@ impl Watcher {
         set.into_iter().collect()
     }
 
-    pub fn watch<F>(&mut self, retrieve_item: bool, on_event: F)
+    pub fn watch<F>(&mut self, retrieve_entries: bool, on_event: F)
         where
-            F: Fn(Option<FileItem>) -> Result<(), ()> + std::marker::Sync + std::marker::Send + 'static {
+            F: Fn(Option<Vec<FileItem>>) -> Result<(), ()> + std::marker::Sync + std::marker::Send + 'static {
         use notify::{Watcher, RecursiveMode, watcher};
         use std::sync::mpsc::channel;
 
@@ -228,14 +228,13 @@ impl Watcher {
 
             let on_event_cb = on_event_arced.clone();
             let event_handler = |path: PathBuf| {
-                if !retrieve_item {
+                if !retrieve_entries {
                     on_event_cb(None).unwrap();
                 } else if let Some(item) = store.get(path.to_str().unwrap()) {
                     let entries = item.get_entries(&store);
-                    for entry in entries {
-                        let entry_item = store.get(&entry).unwrap();
-                        on_event_cb(Some(entry_item.clone_item())).unwrap();
-                    }
+                    on_event_cb(
+                        Some(entries.iter().map(|x| store.get(x).unwrap().clone_item()).collect())
+                    ).unwrap();
                 }
             };
 
@@ -254,13 +253,13 @@ impl Watcher {
                         match event {
                             Event::Write(path) => {
                                 event_handler(path);
-                            },
+                            }
                             Event::Create(path) => {
                                 event_handler(path);
-                            },
+                            }
                             Event::Remove(path) => {
                                 event_handler(path);
-                            },
+                            }
                             _ => {}
                         }
                     }
@@ -278,22 +277,30 @@ impl Watcher {
         self.stop_watch_flag.store(true, Ordering::Relaxed);
     }
 
-    #[napi(js_name = "watch",ts_args_type = "retrieveItem: boolean, callback: (err: null | Error, result: NapiFileItem) => void")]
+    #[napi(js_name = "watch", ts_args_type = "retrieveItem: boolean, callback: (err: null | Error, result: null | NapiFileItem[]) => void")]
     pub fn napi_watch(&mut self, retrieve_item: bool, callback: napi::JsFunction) {
-        let tsfn: ThreadsafeFunction<Option<NapiFileItem>, ErrorStrategy::CalleeHandled> = callback
-            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<Option<NapiFileItem>>| {
-                ctx.env.create_object().map(|mut v| {
-                    if let Some(item) = ctx.value {
-                        v.set("path", item.path).unwrap();
-                        return vec![v];
+        let tsfn: ThreadsafeFunction<Option<Vec<NapiFileItem>>, ErrorStrategy::CalleeHandled> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<Option<Vec<NapiFileItem>>>| {
+                if let Some(items) = ctx.value {
+                    let mut result = ctx.env.create_array(items.len() as u32).unwrap();
+                    for (i, item) in items.iter().enumerate() {
+                        let mut obj = ctx.env.create_object().unwrap();
+                        let mut deps_array = ctx.env.create_array(item.deps.len() as u32).unwrap();
+                        for (j, dep) in item.deps.iter().enumerate() {
+                            deps_array.set(j as u32, dep.clone()).unwrap();
+                        }
+                        obj.set("path", item.path.clone()).unwrap();
+                        obj.set("deps", deps_array.coerce_to_object()).unwrap();
+                        result.set(i as u32, obj).unwrap();
                     }
-                    vec![]
-                  })
+                    return Ok(vec![result.coerce_to_object().unwrap()]);
+                }
+                Ok(vec![])
             }).unwrap();
 
         self.watch(retrieve_item, move |item| {
-            if let Some(item) = item {
-                tsfn.call(Ok(Some(item.to_napi())), ThreadsafeFunctionCallMode::Blocking);
+            if let Some(items) = item {
+                tsfn.call(Ok(Some(items.iter().map(|item| item.to_napi()).collect())), ThreadsafeFunctionCallMode::Blocking);
             } else {
                 tsfn.call(Ok(None), ThreadsafeFunctionCallMode::Blocking);
             }
@@ -420,8 +427,8 @@ mod tests {
 
         let called = Arc::new(AtomicBool::new(false)).clone();
         let called_thread = called.clone();
-        watcher.watch(true,  move |x| {
-            called_thread.store(true,  Ordering::Relaxed);
+        watcher.watch(true, move |x| {
+            called_thread.store(true, Ordering::Relaxed);
             Ok(())
         });
         // We modify a dep of y

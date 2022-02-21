@@ -33,7 +33,7 @@ console.timeEnd('getEntries');
 console.log('entries :>> ', entries.length);
 console.log('entries[0].deps.length :>> ', entries[0].deps.length);
 
-watcher.watch(true, (err, x) => {
-    console.log('x :>> ', x);
+watcher.watch(true, (err, entries) => {
+    console.log('entries :>> ', entries);
 });
 console.log('watch is not blocking');

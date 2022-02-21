@@ -35,5 +35,5 @@ export class ModulesWatcher {
   makeChanges(): Array<EntryChange>
   getDirsToWatch(): Array<string>
   stopWatching(): void
-  watch(retrieveItem: boolean, callback: (err: null | Error, result: NapiFileItem) => void): void
+  watch(retrieveItem: boolean, callback: (err: null | Error, result: null | NapiFileItem[]) => void): void
 }

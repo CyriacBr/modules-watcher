@@ -47,7 +47,7 @@ impl FileItem {
     pub fn to_napi(&self) -> NapiFileItem {
         NapiFileItem {
             path: self.path.to_str().unwrap().to_string(),
-            deps: self.deps.iter().map(String::from).collect()
+            deps: self.deps.iter().map(String::from).collect(),
         }
     }
 }
