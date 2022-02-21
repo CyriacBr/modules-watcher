@@ -6,7 +6,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{TryRecvError};
 use dashmap::DashMap;
 use hotwatch::Event;
-use crate::entry::{FileItem, make_entries, make_missing_entries, make_file_item};
+use napi::threadsafe_function::{ThreadsafeFunction, ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunctionCallMode};
+use crate::entry::{FileItem, make_entries, make_missing_entries, make_file_item, NapiFileItem};
 use rayon::prelude::*;
 
 #[napi(object)]
@@ -60,6 +61,11 @@ impl Watcher {
 
         let (store, entries) = make_entries(entry_paths, Some(entry_globs), PathBuf::from(project_root), None);
         Watcher { setup_options: watcher_opts, store, entries, processed: true, cache_dir, stop_watch_flag: Arc::new(AtomicBool::new(false)) }
+    }
+
+    #[napi]
+    pub fn get_entries(&self) -> Vec<NapiFileItem> {
+        self.entries.iter().map(|x| x.to_napi()).collect() 
     }
 
     fn update_store(&self) {
@@ -267,9 +273,32 @@ impl Watcher {
         println!("listening...");
     }
 
+    #[napi]
     pub fn stop_watching(&self) {
-        println!("quit flag set");
         self.stop_watch_flag.store(true, Ordering::Relaxed);
+    }
+
+    #[napi(js_name = "watch",ts_args_type = "retrieveItem: boolean, callback: (err: null | Error, result: NapiFileItem) => void")]
+    pub fn napi_watch(&mut self, retrieve_item: bool, callback: napi::JsFunction) {
+        let tsfn: ThreadsafeFunction<Option<NapiFileItem>, ErrorStrategy::CalleeHandled> = callback
+            .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<Option<NapiFileItem>>| {
+                ctx.env.create_object().map(|mut v| {
+                    if let Some(item) = ctx.value {
+                        v.set("path", item.path).unwrap();
+                        return vec![v];
+                    }
+                    vec![]
+                  })
+            }).unwrap();
+
+        self.watch(retrieve_item, move |item| {
+            if let Some(item) = item {
+                tsfn.call(Ok(Some(item.to_napi())), ThreadsafeFunctionCallMode::Blocking);
+            } else {
+                tsfn.call(Ok(None), ThreadsafeFunctionCallMode::Blocking);
+            }
+            Ok(())
+        })
     }
 }
 

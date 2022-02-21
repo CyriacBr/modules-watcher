@@ -9,4 +9,31 @@ export class ExternalObject<T> {
     [K: symbol]: T
   }
 }
-export function sum(a: number, b: number): number
+export interface SetupOptions {
+  project: string
+  projectRoot: string
+  globEntries?: Array<string> | undefined | null
+  entries?: Array<string> | undefined | null
+  cacheDir?: string | undefined | null
+}
+export interface EntryChange {
+  changeType: string
+  entry: string
+  tree?: Array<string> | undefined | null
+}
+export interface NapiFileItem {
+  path: string
+  deps: Array<string>
+}
+export type Watcher = ModulesWatcher
+export class ModulesWatcher {
+  setupOptions: SetupOptions
+  processed: boolean
+  cacheDir: string
+  static setup(opts: SetupOptions): Watcher
+  getEntries(): Array<NapiFileItem>
+  makeChanges(): Array<EntryChange>
+  getDirsToWatch(): Array<string>
+  stopWatching(): void
+  watch(retrieveItem: boolean, callback: (err: null | Error, result: NapiFileItem) => void): void
+}
