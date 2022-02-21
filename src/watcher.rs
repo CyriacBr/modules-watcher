@@ -249,7 +249,6 @@ impl Watcher {
                 }
                 match rx.try_recv() {
                     Ok(event) => {
-                        println!("(event): {:?}", event);
                         match event {
                             Event::Write(path) => {
                                 event_handler(path);
@@ -264,7 +263,7 @@ impl Watcher {
                         }
                     }
                     Err(TryRecvError::Empty) => {}
-                    Err(e) => println!("watch error: {:?}", e),
+                    Err(e) => panic!("a watch error occurred: {:?}", e),
                 }
             }
         });
