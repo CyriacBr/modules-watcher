@@ -28,13 +28,13 @@ impl FileItem {
                     return true;
                 }
             }
-            return false;
+            false
         }).map(|item| item.path.to_str().unwrap().to_string()).collect();
 
         if res.is_empty() {
             return vec![self.path.to_str().unwrap().to_string()];
         }
-        return res;
+        res
     }
 }
 

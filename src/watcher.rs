@@ -223,14 +223,12 @@ impl Watcher {
             let on_event_cb = on_event_arced.clone();
             let event_handler = |path: PathBuf| {
                 if !retrieve_item {
-                    on_event_cb(None);
-                } else {
-                    if let Some(item) = store.get(path.to_str().unwrap()) {
-                        let entries = item.get_entries(&store);
-                        for entry in entries {
-                            let entry_item = store.get(&entry).unwrap();
-                            on_event_cb(Some(entry_item.clone_item()));
-                        }
+                    on_event_cb(None).unwrap();
+                } else if let Some(item) = store.get(path.to_str().unwrap()) {
+                    let entries = item.get_entries(&store);
+                    for entry in entries {
+                        let entry_item = store.get(&entry).unwrap();
+                        on_event_cb(Some(entry_item.clone_item())).unwrap();
                     }
                 }
             };
