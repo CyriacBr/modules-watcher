@@ -250,7 +250,13 @@ impl Watcher {
                         match event {
                             Event::Write(path) => {
                                 event_handler(path);
-                            }
+                            },
+                            Event::Create(path) => {
+                                event_handler(path);
+                            },
+                            Event::Remove(path) => {
+                                event_handler(path);
+                            },
                             _ => {}
                         }
                     }
