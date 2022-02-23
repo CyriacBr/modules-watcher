@@ -324,7 +324,7 @@ mod tests {
   use dashmap::DashMap;
   use lazy_static::lazy_static;
   use path_clean::PathClean;
-  use std::path::{Path, PathBuf};
+  use std::path::{PathBuf};
   use std::string::String;
 
   use super::find_node_modules_dir;
@@ -337,7 +337,7 @@ mod tests {
 
   #[test]
   fn test_resolve_with_extension() {
-    let mut path = CWD.join("tests/fixtures/project_a/b");
+    let path = CWD.join("tests/fixtures/project_a/b");
 
     let res = resolve_with_extension(&path).unwrap();
     assert_eq!(
@@ -354,13 +354,13 @@ mod tests {
     paths.push(path_1);
     paths.push(path_2);
 
-    let (store, entries) = make_entries(paths, None, PROJECT_A_PATH.to_path_buf(), None);
+    let (_, entries) = make_entries(paths, None, PROJECT_A_PATH.to_path_buf(), None);
     assert_eq!(entries.len(), 2 as usize);
   }
 
   #[test]
   fn make_entries_test_glob() {
-    let (store, entries) = make_entries(
+    let (_, entries) = make_entries(
       Vec::new(),
       Some(vec!["**/relative_*.js"]),
       PROJECT_A_PATH.to_path_buf(),
@@ -372,7 +372,7 @@ mod tests {
   #[test]
   fn make_entries_test_three_js() {
     let duration = std::time::Instant::now();
-    let (store, entries) = make_entries(
+    let (store, _) = make_entries(
       Vec::new(),
       Some(vec!["**/*.js"]),
       THREEJS_PATH.to_path_buf(),
@@ -386,7 +386,7 @@ mod tests {
   #[test]
   fn make_user_file_relative_path_with_ext() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("relative_w_ext.js");
+    let path = PROJECT_A_PATH.join("relative_w_ext.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
@@ -404,7 +404,7 @@ mod tests {
   #[test]
   fn make_user_file_relative_path_without_ext() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("relative_wo_ext.js");
+    let path = PROJECT_A_PATH.join("relative_wo_ext.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
@@ -422,7 +422,7 @@ mod tests {
   #[test]
   fn make_user_file_relative_path_with_index() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("relative_w_index.js");
+    let path = PROJECT_A_PATH.join("relative_w_index.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
@@ -440,7 +440,7 @@ mod tests {
   #[test]
   fn make_user_file_relative_parent() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("c/relative_parent.js");
+    let path = PROJECT_A_PATH.join("c/relative_parent.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
@@ -458,7 +458,7 @@ mod tests {
   #[test]
   fn make_user_file_project_path() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("project_path.js");
+    let path = PROJECT_A_PATH.join("project_path.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
@@ -476,7 +476,7 @@ mod tests {
   #[test]
   fn make_user_file_tree() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("x.js");
+    let path = PROJECT_A_PATH.join("x.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 2 as usize);
@@ -499,7 +499,7 @@ mod tests {
   #[test]
   fn make_user_file_multiple() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("many.js");
+    let path = PROJECT_A_PATH.join("many.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 2 as usize);
@@ -522,7 +522,7 @@ mod tests {
   #[test]
   fn make_user_file_export() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("export.js");
+    let path = PROJECT_A_PATH.join("export.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
@@ -540,7 +540,7 @@ mod tests {
   #[test]
   fn make_user_file_require() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("require.js");
+    let path = PROJECT_A_PATH.join("require.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
@@ -558,7 +558,7 @@ mod tests {
   #[test]
   fn make_user_file_dyn_import() {
     let store = DashMap::new();
-    let mut path = PROJECT_A_PATH.join("dyn_import.js");
+    let path = PROJECT_A_PATH.join("dyn_import.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);

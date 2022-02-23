@@ -313,7 +313,7 @@ impl Watcher {
 mod tests {
     use lazy_static::lazy_static;
     use crate::watcher::{SetupOptions, Watcher};
-    use std::path::{Path, PathBuf};
+    use std::path::{PathBuf};
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::UNIX_EPOCH;
@@ -349,7 +349,7 @@ mod tests {
         });
 
         let duration = std::time::Instant::now();
-        let changes = watcher.make_changes();
+        watcher.make_changes();
         println!("Elapsed: {}ms", duration.elapsed().as_millis());
         assert_eq!(1, 1);
     }
@@ -368,9 +368,9 @@ mod tests {
 
         // First call, we expect to detect two changes of type added
         if std::path::Path::new(&watcher.cache_dir).exists() {
-            std::fs::remove_dir_all(&watcher.cache_dir);
+            std::fs::remove_dir_all(&watcher.cache_dir).unwrap();
         } else {
-            std::fs::create_dir(&watcher.cache_dir);
+            std::fs::create_dir(&watcher.cache_dir).unwrap();
         }
         let changes = watcher.make_changes();
         assert_eq!(changes.len(), 3);
@@ -385,13 +385,13 @@ mod tests {
         // Third call after modifying a file. We expect changes
         let since_the_epoch = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH).unwrap();
-        std::fs::write(path_1, format!("modified at: {}", since_the_epoch.as_millis()));
+        std::fs::write(path_1, format!("modified at: {}", since_the_epoch.as_millis())).unwrap();
         let changes = watcher.make_changes();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].change_type, "modified".to_string());
 
         // 4th call, we modify a dep
-        std::fs::write(PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(), format!("export const Z = {};", since_the_epoch.as_millis()));
+        std::fs::write(PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(), format!("export const Z = {};", since_the_epoch.as_millis())).unwrap();
         let changes = watcher.make_changes();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].change_type, "dep-modified".to_string());
@@ -405,7 +405,7 @@ mod tests {
         assert_eq!(changes[0].entry, path_2);
 
         // 6h call, we restore z
-        std::fs::write(PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(), format!("export const Z = {};", since_the_epoch.as_millis()));
+        std::fs::write(PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(), format!("export const Z = {};", since_the_epoch.as_millis())).unwrap();
         let changes = watcher.make_changes();
         assert_eq!(changes.len(), 1);
         assert_eq!(changes[0].change_type, "dep-added".to_string());
@@ -426,7 +426,7 @@ mod tests {
 
         let called = Arc::new(AtomicBool::new(false)).clone();
         let called_thread = called.clone();
-        watcher.watch(true, move |x| {
+        watcher.watch(true, move |_| {
             called_thread.store(true, Ordering::Relaxed);
             Ok(())
         });
