@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use regex::{CaptureMatches, Regex};
 use std::collections::HashSet;
 use std::fs::*;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 pub struct FileItem {
   pub path: PathBuf,
@@ -314,7 +314,51 @@ pub fn find_node_modules_dir(root: &Path) -> Option<PathBuf> {
   work_fn()
 }
 
-fn resolve_node_module(path: &Path) -> Option<PathBuf> {
+fn resolve_node_module(module: &str, node_modules: &Path) -> Option<PathBuf> {
+  let mut module_path = PathBuf::new();
+  let components = Path::new(module).components();
+  let components_count = components.count();
+  let root = Path::new(module).components().next().unwrap().as_os_str();
+  let root_pkg_dir = node_modules.join(root);
+  for (i, comp) in Path::new(module).components().into_iter().enumerate() {
+    if comp == Component::RootDir {
+      continue;
+    }
+    let root = comp.as_os_str().to_str().unwrap();
+    module_path = module_path.join(root);
+    let pkg_path = node_modules.join(module_path.clone()).join("package.json");
+    let pkg_dir = node_modules.join(module_path.clone());
+    let json_content = std::fs::read(pkg_path).expect("Couldn't read package.json file");
+    let json: serde_json::Value = serde_json::from_slice(&json_content).unwrap();
+
+    // If we have "exports": "./foo.js"
+    if json["exports"].is_string() {
+      return Some(pkg_dir.join(json["exports"].as_str().unwrap()).clean());
+    }
+
+    // If we have "exports": {}
+    if json["exports"].is_object() {
+      // transforms module to a relative path
+      // foo     => .
+      // foo/bar => ./bar
+      let relative = module.replacen(module_path.to_str().unwrap(), ".", 1);
+      for (key, value) in json["exports"].as_object().unwrap().into_iter() {
+        if key.eq(&relative) {
+          return Some(pkg_dir.join(value.as_str().unwrap()).clean());
+        }
+      }
+    }
+
+    if i != (components_count - 1) {
+      continue;
+    }
+
+    // If we have "main": "./foo.js"
+    if json["main"].is_string() {
+      return Some(root_pkg_dir.join(json["main"].as_str().unwrap()).clean());
+    }
+  }
+
   None
 }
 
@@ -324,10 +368,10 @@ mod tests {
   use dashmap::DashMap;
   use lazy_static::lazy_static;
   use path_clean::PathClean;
-  use std::path::{PathBuf};
+  use std::path::PathBuf;
   use std::string::String;
 
-  use super::find_node_modules_dir;
+  use super::{find_node_modules_dir, resolve_node_module};
 
   lazy_static! {
     static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
@@ -585,6 +629,39 @@ mod tests {
       let result = find_node_modules_dir(CWD.join("src").as_path()).unwrap();
 
       assert_eq!(result.to_str().unwrap(), expected.to_str().unwrap());
+    }
+  }
+
+  #[test]
+  fn test_resolve_node_modules() {
+    let node_modules = CWD.join("tests/fixtures/fake_node_modules");
+    {
+      let result = resolve_node_module("exports_str", node_modules.as_path()).unwrap();
+      assert_eq!(result, node_modules.join("exports_str/main.js"));
+    }
+    {
+      let result = resolve_node_module("exports_obj", node_modules.as_path()).unwrap();
+      assert_eq!(result, node_modules.join("exports_obj/main.js"));
+    }
+    {
+      let result = resolve_node_module("exports_obj/a", node_modules.as_path()).unwrap();
+      assert_eq!(result, node_modules.join("exports_obj/a.js"));
+    }
+    {
+      let result = resolve_node_module("main", node_modules.as_path()).unwrap();
+      assert_eq!(result, node_modules.join("main/main.js"));
+    }
+    {
+      let result = resolve_node_module("nested/b", node_modules.as_path()).unwrap();
+      assert_eq!(result, node_modules.join("nested/b.js"));
+    }
+    {
+      let result = resolve_node_module("nested", node_modules.as_path()).unwrap();
+      assert_eq!(result, node_modules.join("nested/a.js"));
+    }
+    {
+      let result = resolve_node_module("nested/c", node_modules.as_path()).unwrap();
+      assert_eq!(result, node_modules.join("nested/c.js"));
     }
   }
 }

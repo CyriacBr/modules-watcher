@@ -504,6 +504,7 @@ dependencies = [
  "path-clean",
  "rayon",
  "regex",
+ "serde_json",
 ]
 
 [[package]]
