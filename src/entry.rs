@@ -2,6 +2,7 @@ use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use glob::glob;
 use lazy_static::lazy_static;
+use memoize::memoize;
 use path_clean::PathClean;
 use rayon::prelude::*;
 use regex::{CaptureMatches, Regex};
@@ -116,11 +117,10 @@ pub fn make_missing_entries(
 
 lazy_static! {
   static ref NAMED_MODULE_RE: Regex =
-    Regex::new(r#"(?:import|export)\s+.+from\s+['"]([([\.\~]/)|(\.\./)].+)['"]"#).unwrap();
-  static ref UNNAMED_MODULE_RE: Regex =
-    Regex::new(r#"(?:import|export)\s+['"]([([\.\~]/)|(\.\./)].+)['"]"#).unwrap();
+    Regex::new(r#"(?:import|export)\s+.+from\s+['"](.+)['"]"#).unwrap();
+  static ref UNNAMED_MODULE_RE: Regex = Regex::new(r#"(?:import|export)\s+['"](.+)['"]"#).unwrap();
   static ref REQUIRE_DYNIMP_RE: Regex =
-    Regex::new(r#"(?:require|import)\(['"]([([\.\~]/)|(\.\./)].+)['"]\)"#).unwrap();
+    Regex::new(r#"(?:require|import)\(['"](.+)['"]\)"#).unwrap();
   static ref DEFAULT_JS_EXTS: Vec<String> = vec!["ts", "js", "cjs", "mjs"]
     .iter()
     .map(|x| x.to_string())
@@ -200,15 +200,21 @@ pub fn make_file_item<'a>(
   for capture in captures {
     for cap in capture {
       let source = &cap[1];
-      let mut path_buf = if source.starts_with("./") || source.starts_with("../") {
+      let maybe_path_buf = if source.starts_with("./") || source.starts_with("../") {
         let dir = file_path.parent().unwrap();
-        dir.join(source).clean()
+        Some(dir.join(source).clean())
       } else if source.starts_with("~/") {
         let transformed_path = source.replace("~/", "");
-        project_path.join(Path::new(&transformed_path)).clean()
+        Some(project_path.join(Path::new(&transformed_path)).clean())
       } else {
-        panic!("Couldn't handle import: {}", source);
+        let node_modules_path = find_node_modules_dir(project_path.to_path_buf())
+          .expect("Couldn't find node_modules folder");
+        resolve_node_module(source, node_modules_path.as_path())
       };
+      if maybe_path_buf.is_none() {
+        return None;
+      }
+      let mut path_buf = maybe_path_buf.unwrap();
       // If the imported file is a directory, we need to resolve it's index file
       if path_buf.is_dir() {
         if let Some(found) = resolve_index(&path_buf) {
@@ -294,7 +300,8 @@ fn resolve_index(path: &Path) -> Option<PathBuf> {
   None
 }
 
-pub fn find_node_modules_dir(root: &Path) -> Option<PathBuf> {
+#[memoize]
+pub fn find_node_modules_dir(root: PathBuf) -> Option<PathBuf> {
   let mut counter: u8 = 0;
   let mut work_fn = move || {
     if counter >= 100 {
@@ -308,7 +315,7 @@ pub fn find_node_modules_dir(root: &Path) -> Option<PathBuf> {
       }
     }
     counter += 1;
-    return find_node_modules_dir(root.parent().unwrap());
+    return find_node_modules_dir(root.parent().unwrap().to_path_buf());
   };
 
   work_fn()
@@ -327,8 +334,13 @@ fn resolve_node_module(module: &str, node_modules: &Path) -> Option<PathBuf> {
     let root = comp.as_os_str().to_str().unwrap();
     module_path = module_path.join(root);
     let pkg_path = node_modules.join(module_path.clone()).join("package.json");
+    // maybe the module is an internal node_modules, which doesn't reside inside the project
+    // node_modules folder
+    if !pkg_path.exists() {
+      return None;
+    }
     let pkg_dir = node_modules.join(module_path.clone());
-    let json_content = std::fs::read(pkg_path).expect("Couldn't read package.json file");
+    let json_content = std::fs::read(pkg_path).unwrap();
     let json: serde_json::Value = serde_json::from_slice(&json_content).unwrap();
 
     // If we have "exports": "./foo.js"
@@ -621,12 +633,12 @@ mod tests {
   fn test_find_node_modules_dir() {
     let expected = CWD.join("node_modules").clean();
     {
-      let result = find_node_modules_dir(CWD.as_path()).unwrap();
+      let result = find_node_modules_dir(CWD.clone()).unwrap();
 
       assert_eq!(result.to_str().unwrap(), expected.to_str().unwrap());
     }
     {
-      let result = find_node_modules_dir(CWD.join("src").as_path()).unwrap();
+      let result = find_node_modules_dir(CWD.join("src")).unwrap();
 
       assert_eq!(result.to_str().unwrap(), expected.to_str().unwrap());
     }
@@ -663,5 +675,22 @@ mod tests {
       let result = resolve_node_module("nested/c", node_modules.as_path()).unwrap();
       assert_eq!(result, node_modules.join("nested/c.js"));
     }
+  }
+
+  #[test]
+  fn make_file_item_node_module() {
+    let store = DashMap::new();
+    let path = PROJECT_A_PATH.join("node_module.js");
+
+    let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+    assert_eq!(
+      true,
+      res.deps.contains(
+        CWD
+          .join("node_modules/fast-glob/out/index.js")
+          .to_str()
+          .unwrap()
+      )
+    );
   }
 }
