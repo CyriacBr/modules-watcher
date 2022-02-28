@@ -298,6 +298,7 @@ impl Watcher {
 
       let on_event_cb = on_event_arced.clone();
       let event_handler = |path: PathBuf| {
+          println!("event at {:?}", path);
         if !retrieve_entries {
           on_event_cb(None).unwrap();
         } else if let Some(item) = store.get(path.to_str().unwrap()) {
@@ -314,7 +315,6 @@ impl Watcher {
 
       loop {
         if flag.load(Ordering::Relaxed) {
-          println!("Quit watching");
           flag.store(false, Ordering::Relaxed);
           for path in &paths {
             watcher.unwatch(path).unwrap();
@@ -402,8 +402,8 @@ mod tests {
 
   lazy_static! {
     static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
-    static ref PROJECT_A_PATH: PathBuf = CWD.join("tests/fixtures/project_a");
-    static ref THREEJS_PATH: PathBuf = CWD.join("tests/fixtures/three_js");
+    static ref PROJECT_A_PATH: PathBuf = CWD.join("tests").join("fixtures").join("project_a");
+    static ref THREEJS_PATH: PathBuf = CWD.join("tests").join("fixtures").join("three_js");
   }
 
   #[test]

@@ -3,12 +3,16 @@ use dashmap::DashMap;
 use glob::glob;
 use lazy_static::lazy_static;
 use memoize::memoize;
-use path_clean::PathClean;
 use rayon::prelude::*;
 use regex::{CaptureMatches, Regex};
 use std::collections::HashSet;
 use std::fs::*;
 use std::path::{Component, Path, PathBuf};
+
+#[path = "./path_clean.rs"]
+mod path_clean;
+
+use path_clean::*;
 
 pub struct FileItem {
   pub path: PathBuf,
@@ -379,7 +383,6 @@ mod tests {
   use crate::entry::{make_entries, make_file_item, resolve_with_extension};
   use dashmap::DashMap;
   use lazy_static::lazy_static;
-  use path_clean::PathClean;
   use std::path::PathBuf;
   use std::string::String;
 
@@ -387,18 +390,23 @@ mod tests {
 
   lazy_static! {
     static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
-    static ref PROJECT_A_PATH: PathBuf = CWD.join("tests/fixtures/project_a");
-    static ref THREEJS_PATH: PathBuf = CWD.join("tests/fixtures/three_js");
+    static ref PROJECT_A_PATH: PathBuf = CWD.join("tests").join("fixtures").join("project_a");
+    static ref THREEJS_PATH: PathBuf = CWD.join("tests").join("fixtures").join("three_js");
   }
 
   #[test]
   fn test_resolve_with_extension() {
-    let path = CWD.join("tests/fixtures/project_a/b");
+    let path = PROJECT_A_PATH.join("b");
 
     let res = resolve_with_extension(&path).unwrap();
     assert_eq!(
       res.to_str(),
-      CWD.join("tests/fixtures/project_a/b.js").to_str()
+      CWD
+        .join("tests")
+        .join("fixtures")
+        .join("project_a")
+        .join("b.js")
+        .to_str()
     );
   }
 
@@ -489,7 +497,7 @@ mod tests {
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
       dep_1_path_str,
-      PROJECT_A_PATH.join("c/index.js").to_str().unwrap()
+      PROJECT_A_PATH.join("c").join("index.js").to_str().unwrap()
     );
   }
 
@@ -525,7 +533,7 @@ mod tests {
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
       dep_1_path_str,
-      PROJECT_A_PATH.join("c/index.js").to_str().unwrap()
+      PROJECT_A_PATH.join("c").join("index.js").to_str().unwrap()
     );
   }
 
@@ -539,17 +547,9 @@ mod tests {
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
-    let dep_1_path_str = &deps[0];
-    let dep_1_1_path_str = &deps[1];
     assert_eq!(path_str, path.to_str().unwrap());
-    assert_eq!(
-      dep_1_path_str,
-      PROJECT_A_PATH.join("z.js").to_str().unwrap()
-    );
-    assert_eq!(
-      dep_1_1_path_str,
-      PROJECT_A_PATH.join("y.js").to_str().unwrap()
-    );
+    assert_eq!(deps.contains(&PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string()), true);
+    assert_eq!(deps.contains(&PROJECT_A_PATH.join("y.js").to_str().unwrap().to_string()), true);
   }
 
   #[test]
@@ -562,17 +562,9 @@ mod tests {
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
-    let dep_1_path_str = &deps[0];
-    let dep_2_path_str = &deps[1];
     assert_eq!(path_str, path.to_str().unwrap());
-    assert_eq!(
-      dep_1_path_str,
-      PROJECT_A_PATH.join("z.js").to_str().unwrap()
-    );
-    assert_eq!(
-      dep_2_path_str,
-      PROJECT_A_PATH.join("b.js").to_str().unwrap()
-    );
+    assert_eq!(deps.contains(&PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string()), true);
+    assert_eq!(deps.contains(&PROJECT_A_PATH.join("b.js").to_str().unwrap().to_string()), true);
   }
 
   #[test]
@@ -631,7 +623,7 @@ mod tests {
 
   #[test]
   fn test_find_node_modules_dir() {
-    let expected = CWD.join("node_modules").clean();
+    let expected = CWD.join("node_modules");
     {
       let result = find_node_modules_dir(CWD.clone()).unwrap();
 
@@ -687,7 +679,10 @@ mod tests {
       true,
       res.deps.contains(
         CWD
-          .join("node_modules/fast-glob/out/index.js")
+          .join("node_modules")
+          .join("fast-glob")
+          .join("out")
+          .join("index.js")
           .to_str()
           .unwrap()
       )
