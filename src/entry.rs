@@ -14,6 +14,7 @@ mod path_clean;
 
 use path_clean::*;
 
+#[derive(Debug)]
 pub struct FileItem {
   pub path: PathBuf,
   pub deps: HashSet<String>,

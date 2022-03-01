@@ -54,6 +54,21 @@ pub struct Watcher {
 
 #[napi]
 impl Watcher {
+  pub fn clone_struct(&self) -> Watcher {
+    let store: DashMap<String, FileItem> = DashMap::new();
+    for ref_multi in &self.store {
+      store.insert(ref_multi.key().to_string(), ref_multi.value().clone_item());
+    }
+    Watcher {
+      setup_options: self.setup_options.clone(),
+      store,
+      entries: self.entries.iter().map(|x| x.clone_item()).collect(),
+      processed: self.processed,
+      cache_dir: self.cache_dir.clone(),
+      stop_watch_flag: self.stop_watch_flag.clone(),
+    }
+  }
+
   #[napi(factory)]
   pub fn setup(opts: SetupOptions) -> Self {
     let watcher_opts = opts.clone();
@@ -110,6 +125,7 @@ impl Watcher {
   }
 
   fn make_file_deps(&self, file_path: &str) {
+    self.store.remove(file_path).unwrap();
     let project_root = &self.setup_options.project_root;
     let path = PathBuf::from(file_path);
     make_file_item(
@@ -281,10 +297,7 @@ impl Watcher {
     use std::sync::mpsc::channel;
 
     let paths = self.get_dirs_to_watch();
-    let store: DashMap<String, FileItem> = DashMap::new();
-    for ref_multi in &self.store {
-      store.insert(ref_multi.key().to_string(), ref_multi.value().clone_item());
-    }
+    let self_clone = self.clone_struct();
 
     let flag = self.stop_watch_flag.clone();
     let on_event_arced = Arc::new(on_event);
@@ -297,15 +310,26 @@ impl Watcher {
       }
 
       let on_event_cb = on_event_arced.clone();
-      let event_handler = |path: PathBuf| {
+      let event_handler = |path: PathBuf, event: notify::DebouncedEvent| {
+        match event {
+          Event::Create(_) => {
+            self_clone.update_store();
+          }
+          Event::Write(_) => {
+            if self_clone.store.contains_key(path.to_str().unwrap()) {
+              self_clone.make_file_deps(path.to_str().unwrap());
+            }
+          }
+          _ => {}
+        }
         if !retrieve_entries {
           on_event_cb(None).unwrap();
-        } else if let Some(item) = store.get(path.to_str().unwrap()) {
-          let entries = item.get_entries(&store);
+        } else if let Some(item) = self_clone.store.get(path.to_str().unwrap()) {
+          let entries = item.get_entries(&self_clone.store);
           on_event_cb(Some(
             entries
               .iter()
-              .map(|x| store.get(x).unwrap().clone_item())
+              .map(|x| self_clone.store.get(x).unwrap().clone_item())
               .collect(),
           ))
           .unwrap();
@@ -321,18 +345,21 @@ impl Watcher {
           break;
         }
         match rx.try_recv() {
-          Ok(event) => match event {
-            Event::Write(path) => {
-              event_handler(path);
+          Ok(event) => {
+            // println!("event: {:?}", event);
+            match &event {
+              Event::Write(path) => {
+                event_handler(path.to_path_buf(), event);
+              }
+              Event::Create(path) => {
+                event_handler(path.to_path_buf(), event);
+              }
+              Event::Remove(path) => {
+                event_handler(path.to_path_buf(), event);
+              }
+              _ => {}
             }
-            Event::Create(path) => {
-              event_handler(path);
-            }
-            Event::Remove(path) => {
-              event_handler(path);
-            }
-            _ => {}
-          },
+          }
           Err(TryRecvError::Empty) => {}
           Err(e) => panic!("a watch error occurred: {:?}", e),
         }

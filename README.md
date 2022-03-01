@@ -105,7 +105,7 @@ Note that `watch` can't be called consecutively without `stopWatch` after each `
 **`getDirsToWatch`**: If you want to handle yourself the watching, this method gives you all the directory paths that need to be watched.
 ```ts
 const paths = watcher.getDirsToWatch();
-paths; // ['path/docs', 'path/docs/examples']
+paths; // ['path/docs', 'path/docs/components', 'path/to/node-modules/react/dist']
 ```
 
 **`getEntries`**: returns all entries with their dependencies.  
