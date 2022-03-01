@@ -33,12 +33,13 @@ const watcher = ModulesWatcher.setup({
 ```
 
 Then, you can either:
-* Get the changes from the last time `setup` was called.
+* Get the changes since the last time the program was executed.
 * Or actively watch any changes from now on.
 
 ### Getting changes from last usage
 
-`makeChanges()` will return changes based on the cache and the checksum of the dependency tree of your entries.  
+`makeChanges()` will return changes based on the cache and the current checksum of the dependency tree of your entries.  
+This means that changes that occurred when `modules-watcher` wasn't running will be picked up.  
 The first time this method is called (there's no cache yet), every entry will be marked as `added`.
 
 ```ts
