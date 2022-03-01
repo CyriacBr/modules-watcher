@@ -21,6 +21,8 @@ console.time('makeChanges');
 const changes = watcher.makeChanges();
 console.timeEnd('makeChanges');
 console.log('changes :>> ', changes.length);
+console.log('changes[0] :>> ', changes[0]);
+console.log('changes[1] :>> ', changes.find(v => !!v.tree));
 
 console.time('getDirsToWatch');
 const dirs = watcher.getDirsToWatch();
@@ -31,6 +33,7 @@ console.time('getEntries');
 const entries = watcher.getEntries();
 console.timeEnd('getEntries');
 console.log('entries :>> ', entries.length);
+console.log('entries[0] :>> ', entries[0]);
 console.log('entries[0].deps.length :>> ', entries[0].deps.length);
 
 watcher.watch(true, (err, entries) => {
