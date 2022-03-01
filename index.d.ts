@@ -9,6 +9,10 @@ export class ExternalObject<T> {
     [K: symbol]: T
   }
 }
+export interface NapiFileItem {
+  path: string
+  deps: Array<string>
+}
 export interface SetupOptions {
   project: string
   projectRoot: string
@@ -20,10 +24,6 @@ export interface EntryChange {
   changeType: string
   entry: string
   tree?: Array<string> | undefined | null
-}
-export interface NapiFileItem {
-  path: string
-  deps: Array<string>
 }
 export type Watcher = ModulesWatcher
 export class ModulesWatcher {
