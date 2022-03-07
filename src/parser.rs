@@ -1,11 +1,7 @@
-use nom::branch::{alt, permutation};
+use nom::branch::{alt};
 use nom::bytes::complete::{take, take_until};
 use nom::character::complete::{anychar, char, one_of};
-use nom::combinator::peek;
-use nom::error::ErrorKind;
-use nom::multi::{many0, many1, many_till, separated_list0, separated_list1};
-use nom::sequence::tuple;
-use nom::Err::Error;
+use nom::multi::{many0, many1, many_till, separated_list1};
 use nom::{bytes::complete::tag, IResult};
 use std::ops::Add;
 
@@ -16,7 +12,7 @@ fn parse_esm_statement(input: &str) -> IResult<&str, Vec<String>> {
   fn parse_named(input: &str) -> IResult<&str, ()> {
     let (input, _) = take_until("from")(input)?;
     let (input, _) = tag("from")(input)?;
-    let (input, res) = many1(char(' '))(input)?;
+    let (input, _) = many1(char(' '))(input)?;
 
     Ok((input, ()))
   }
@@ -102,7 +98,7 @@ fn parse_css_import_statement(input: &str) -> IResult<&str, Vec<String>> {
   ))
 }
 
-fn parse_all(input: &str) -> Vec<String> {
+pub fn parse_deps(input: &str) -> Vec<String> {
   let (_, res) = many0(many_till(
     anychar,
     alt((
@@ -116,7 +112,7 @@ fn parse_all(input: &str) -> Vec<String> {
 
   res
     .into_iter()
-    .map(|(chars, path)| path)
+    .map(|(_, path)| path)
     .flatten()
     .collect()
 }
@@ -124,18 +120,9 @@ fn parse_all(input: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
   use crate::parser::{
-    parse_all, parse_css_import_statement, parse_esm_statement, parse_lazy_esm_statement,
+    parse_deps, parse_css_import_statement, parse_esm_statement, parse_lazy_esm_statement,
     parse_require_statement,
   };
-  use nom::bytes::complete::{tag, take};
-  use nom::bytes::streaming::take_until;
-  use nom::character::complete::{anychar, char, newline, one_of};
-  use nom::combinator::{eof, iterator, opt, rest};
-  use nom::error::{Error, ErrorKind};
-  use nom::multi::{count, many0, many1, many_till, separated_list1};
-  use nom::{Finish, IResult, Parser};
-  use regex::internal::Input;
-  use std::process::Output;
 
   #[test]
   fn esm_statement() {
@@ -245,7 +232,7 @@ mod tests {
 
   #[test]
   fn test_parse_all() {
-    let res = parse_all(
+    let res = parse_deps(
       r#"require('before.js');
       blahblah
       import foo from 'foo.js'

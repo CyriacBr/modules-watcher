@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 extern crate napi_derive;
 extern crate core;
 
+#[path = "../src/parser.rs"]
+mod parser;
 #[path = "../src/entry.rs"]
 mod entry;
 #[path = "../src/watcher.rs"]

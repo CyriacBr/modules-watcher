@@ -4,7 +4,7 @@ use glob::glob;
 use lazy_static::lazy_static;
 use memoize::memoize;
 use rayon::prelude::*;
-use regex::{CaptureMatches, Regex};
+use regex::{Regex};
 use std::collections::HashSet;
 use std::fs::*;
 use std::path::{Component, Path, PathBuf};
@@ -13,6 +13,7 @@ use std::path::{Component, Path, PathBuf};
 mod path_clean;
 
 use path_clean::*;
+use crate::parser::parse_deps;
 
 #[derive(Debug)]
 pub struct FileItem {
@@ -154,16 +155,12 @@ pub fn make_file_item<'a>(
     _ => vec![&DEFAULT_SUPPATH_ESM, &DEFAULT_SUPPATH_DYN_ESM],
   };
   let mut supported_exts: Vec<&String> = Vec::new();
-  let mut esm_exts: &Vec<String> = &Vec::new();
-  let mut dyn_esm_exts: &Vec<String> = &Vec::new();
   for supported_path in &supported_paths {
     match *supported_path {
       SupportedPath::ESM(exts) => {
-        esm_exts = exts;
         supported_exts.extend(exts.iter());
       }
       SupportedPath::DynEsmReq(exts) => {
-        dyn_esm_exts = exts;
         supported_exts.extend(exts.iter());
       }
     }
@@ -186,60 +183,42 @@ pub fn make_file_item<'a>(
   let content = read_to_string(&file_path)
     .unwrap_or_else(|_| panic!("Couldn't read file {} ", file_path.to_str().unwrap()));
 
-  let mut captures: Vec<CaptureMatches> = Vec::new();
-  for path_type in supported_paths {
-    match path_type {
-      SupportedPath::ESM(_) => {
-        if esm_exts.iter().any(|x| x.eq(&file_ext)) {
-          captures.push(NAMED_MODULE_RE.captures_iter(&content));
-          captures.push(UNNAMED_MODULE_RE.captures_iter(&content));
-        }
-      }
-      SupportedPath::DynEsmReq(_) => {
-        if dyn_esm_exts.iter().any(|x| x.eq(&file_ext)) {
-          captures.push(REQUIRE_DYNIMP_RE.captures_iter(&content));
-        }
+  let imports = parse_deps(&content);
+  for source in imports {
+    let maybe_path_buf = if source.starts_with("./") || source.starts_with("../") {
+      let dir = file_path.parent().unwrap();
+      Some(dir.join(source).clean())
+    } else if source.starts_with("~/") {
+      let transformed_path = source.replace("~/", "");
+      Some(project_path.join(Path::new(&transformed_path)).clean())
+    } else {
+      let node_modules_path = find_node_modules_dir(project_path.to_path_buf())
+        .expect("Couldn't find node_modules folder");
+      resolve_node_module(&source, node_modules_path.as_path())
+    };
+    if maybe_path_buf.is_none() {
+      return None;
+    }
+    let mut path_buf = maybe_path_buf.unwrap();
+    // If the imported file is a directory, we need to resolve it's index file
+    if path_buf.is_dir() {
+      if let Some(found) = resolve_index(&path_buf) {
+        path_buf = found;
+      } else {
+        panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
       }
     }
-  }
-  for capture in captures {
-    for cap in capture {
-      let source = &cap[1];
-      let maybe_path_buf = if source.starts_with("./") || source.starts_with("../") {
-        let dir = file_path.parent().unwrap();
-        Some(dir.join(source).clean())
-      } else if source.starts_with("~/") {
-        let transformed_path = source.replace("~/", "");
-        Some(project_path.join(Path::new(&transformed_path)).clean())
+    // If the imported file has no extension, we need to resolve it
+    else if path_buf.extension().is_none() {
+      if let Some(found) = resolve_with_extension(&path_buf) {
+        path_buf = found;
       } else {
-        let node_modules_path = find_node_modules_dir(project_path.to_path_buf())
-          .expect("Couldn't find node_modules folder");
-        resolve_node_module(source, node_modules_path.as_path())
-      };
-      if maybe_path_buf.is_none() {
-        return None;
+        panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
       }
-      let mut path_buf = maybe_path_buf.unwrap();
-      // If the imported file is a directory, we need to resolve it's index file
-      if path_buf.is_dir() {
-        if let Some(found) = resolve_index(&path_buf) {
-          path_buf = found;
-        } else {
-          panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
-        }
-      }
-      // If the imported file has no extension, we need to resolve it
-      else if path_buf.extension().is_none() {
-        if let Some(found) = resolve_with_extension(&path_buf) {
-          path_buf = found;
-        } else {
-          panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
-        }
-      }
-      all_deps.insert(path_buf.to_str().unwrap().to_string());
-      if let Some(file_ref) = make_file_item(&path_buf.clone(), project_path, store, opts) {
-        all_deps.extend(file_ref.deps.clone());
-      }
+    }
+    all_deps.insert(path_buf.to_str().unwrap().to_string());
+    if let Some(file_ref) = make_file_item(&path_buf.clone(), project_path, store, opts) {
+      all_deps.extend(file_ref.deps.clone());
     }
   }
   store
@@ -549,8 +528,14 @@ mod tests {
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
     assert_eq!(path_str, path.to_str().unwrap());
-    assert_eq!(deps.contains(&PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string()), true);
-    assert_eq!(deps.contains(&PROJECT_A_PATH.join("y.js").to_str().unwrap().to_string()), true);
+    assert_eq!(
+      deps.contains(&PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string()),
+      true
+    );
+    assert_eq!(
+      deps.contains(&PROJECT_A_PATH.join("y.js").to_str().unwrap().to_string()),
+      true
+    );
   }
 
   #[test]
@@ -564,8 +549,14 @@ mod tests {
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
     assert_eq!(path_str, path.to_str().unwrap());
-    assert_eq!(deps.contains(&PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string()), true);
-    assert_eq!(deps.contains(&PROJECT_A_PATH.join("b.js").to_str().unwrap().to_string()), true);
+    assert_eq!(
+      deps.contains(&PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string()),
+      true
+    );
+    assert_eq!(
+      deps.contains(&PROJECT_A_PATH.join("b.js").to_str().unwrap().to_string()),
+      true
+    );
   }
 
   #[test]
