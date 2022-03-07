@@ -1,18 +1,18 @@
 use nom::branch::{alt};
 use nom::bytes::complete::{take, take_until};
-use nom::character::complete::{anychar, char, one_of};
-use nom::multi::{many0, many1, many_till, separated_list1};
+use nom::character::complete::{anychar, one_of, space1, space0};
+use nom::multi::{many0, many_till, separated_list1};
 use nom::{bytes::complete::tag, IResult};
 use std::ops::Add;
 
 fn parse_esm_statement(input: &str) -> IResult<&str, Vec<String>> {
   let (input, _) = tag("import")(input)?;
-  let (input, _) = many1(char(' '))(input)?;
+  let (input, _) = space1(input)?;
 
   fn parse_named(input: &str) -> IResult<&str, ()> {
     let (input, _) = take_until("from")(input)?;
     let (input, _) = tag("from")(input)?;
-    let (input, _) = many1(char(' '))(input)?;
+    let (input, _) = space1(input)?;
 
     Ok((input, ()))
   }
@@ -28,13 +28,13 @@ fn parse_esm_statement(input: &str) -> IResult<&str, Vec<String>> {
 
 fn parse_lazy_esm_statement(input: &str) -> IResult<&str, Vec<String>> {
   let (input, _) = tag("import")(input)?;
-  let (input, _) = many0(char(' '))(input)?;
+  let (input, _) = space0(input)?;
   let (input, _) = tag("(")(input)?;
-  let (input, _) = many0(char(' '))(input)?;
+  let (input, _) = space0(input)?;
   let (input, _) = one_of("\"'")(input)?;
   let (input, (str_tab, _)): (&str, (Vec<&str>, char)) =
     many_till(take(1usize), one_of("\"'"))(input)?;
-  let (input, _) = many0(char(' '))(input)?;
+  let (input, _) = space0(input)?;
   let (input, _) = tag(")")(input)?;
 
   let path = str_tab.join("");
@@ -43,13 +43,13 @@ fn parse_lazy_esm_statement(input: &str) -> IResult<&str, Vec<String>> {
 
 fn parse_require_statement(input: &str) -> IResult<&str, Vec<String>> {
   let (input, _) = tag("require")(input)?;
-  let (input, _) = many0(char(' '))(input)?;
+  let (input, _) = space0(input)?;
   let (input, _) = tag("(")(input)?;
-  let (input, _) = many0(char(' '))(input)?;
+  let (input, _) = space0(input)?;
   let (input, _) = one_of("\"'")(input)?;
   let (input, (str_tab, _)): (&str, (Vec<&str>, char)) =
     many_till(take(1usize), one_of("\"'"))(input)?;
-  let (input, _) = many0(char(' '))(input)?;
+  let (input, _) = space0(input)?;
   let (input, _) = tag(")")(input)?;
 
   let path = str_tab.join("");
@@ -58,10 +58,10 @@ fn parse_require_statement(input: &str) -> IResult<&str, Vec<String>> {
 
 fn parse_css_import_statement(input: &str) -> IResult<&str, Vec<String>> {
   let (input, _) = tag("@import")(input)?;
-  let (input, _) = many1(char(' '))(input)?;
+  let (input, _) = space1(input)?;
 
   fn parse_literal(input: &str) -> IResult<&str, String> {
-    let (input, _) = many0(char(' '))(input)?;
+    let (input, _) = space0(input)?;
     let (input, _) = one_of("\"'")(input)?;
     let (input, (str_tab, _)): (&str, (Vec<&str>, char)) =
       many_till(take(1usize), one_of("\"'"))(input)?;
@@ -71,10 +71,10 @@ fn parse_css_import_statement(input: &str) -> IResult<&str, Vec<String>> {
   }
 
   fn parse_url(input: &str) -> IResult<&str, String> {
-    let (input, _) = many0(char(' '))(input)?;
+    let (input, _) = space0(input)?;
     let (input, _) = take_until("url")(input)?;
     let (input, _) = tag("url")(input)?;
-    let (input, _) = many0(char(' '))(input)?;
+    let (input, _) = space0(input)?;
     let (input, _) = tag("(")(input)?;
     let (input, path) = parse_literal(input)?;
     let (input, _) = tag(")")(input)?;
