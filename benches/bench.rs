@@ -6,14 +6,14 @@ use std::path::{Path, PathBuf};
 extern crate napi_derive;
 extern crate core;
 
-#[path = "../src/parser.rs"]
-mod parser;
 #[path = "../src/entry.rs"]
 mod entry;
+#[path = "../src/parser.rs"]
+mod parser;
 #[path = "../src/watcher.rs"]
 mod watcher;
 
-use entry::{MakeEntriesOptions, SupportedPath};
+use entry::MakeEntriesOptions;
 use watcher::{SetupOptions, Watcher};
 
 lazy_static! {
@@ -29,19 +29,7 @@ fn bench_make_entries(c: &mut Criterion) {
         Vec::new(),
         Some(vec!["**/*.js"]),
         THREEJS_PATH.to_path_buf(),
-        None,
-      );
-    })
-  });
-  group.bench_function("three_js (only ESM .js)", |b| {
-    b.iter_with_large_drop(|| {
-      entry::make_entries(
-        Vec::new(),
-        Some(vec!["**/*.js"]),
-        THREEJS_PATH.to_path_buf(),
-        Some(MakeEntriesOptions {
-          supported_paths: vec![entry::SupportedPath::ESM(vec!["js".to_string()])],
-        }),
+        &None,
       );
     })
   });
@@ -55,6 +43,7 @@ fn bench_make_changes(c: &mut Criterion) {
     glob_entries: Some(vec!["**/*.js".to_string()]),
     entries: None,
     cache_dir: None,
+    supported_paths: None,
   });
   let mut group = c.benchmark_group("make_changes");
   group.bench_function("three_js", |b| {

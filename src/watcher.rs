@@ -1,4 +1,7 @@
-use crate::entry::{make_entries, make_file_item, make_missing_entries, FileItem, NapiFileItem};
+use crate::entry::{
+  make_entries, make_file_item, make_missing_entries, FileItem, MakeEntriesOptions, NapiFileItem,
+  SupportedPaths,
+};
 use dashmap::DashMap;
 use hotwatch::Event;
 use napi::threadsafe_function::{
@@ -24,6 +27,7 @@ pub struct SetupOptions {
   pub glob_entries: Option<Vec<String>>,
   pub entries: Option<Vec<String>>,
   pub cache_dir: Option<String>,
+  pub supported_paths: Option<SupportedPaths>,
 }
 
 #[napi(object)]
@@ -50,6 +54,7 @@ pub struct Watcher {
   pub processed: bool,
   pub cache_dir: String,
   stop_watch_flag: Arc<AtomicBool>,
+  make_entries_opts: Option<MakeEntriesOptions>,
 }
 
 #[napi]
@@ -66,6 +71,7 @@ impl Watcher {
       processed: self.processed,
       cache_dir: self.cache_dir.clone(),
       stop_watch_flag: self.stop_watch_flag.clone(),
+      make_entries_opts: self.make_entries_opts.clone(),
     }
   }
 
@@ -86,11 +92,15 @@ impl Watcher {
     let entry_paths: Vec<PathBuf> = entries_vec.iter().map(PathBuf::from).collect();
     let entry_globs: Vec<&str> = globs_vec.iter().map(|x| &x[..]).collect();
 
+    let make_entries_opts = Some(MakeEntriesOptions {
+      supported_paths: opts.supported_paths.clone(),
+    });
+
     let (store, entries) = make_entries(
       entry_paths,
       Some(entry_globs),
       PathBuf::from(project_root),
-      None,
+      &make_entries_opts,
     );
     Watcher {
       setup_options: watcher_opts,
@@ -99,6 +109,7 @@ impl Watcher {
       processed: true,
       cache_dir,
       stop_watch_flag: Arc::new(AtomicBool::new(false)),
+      make_entries_opts,
     }
   }
 
@@ -120,7 +131,7 @@ impl Watcher {
       Some(entry_globs),
       PathBuf::from(project_root),
       &self.store,
-      None,
+      &self.make_entries_opts,
     );
   }
 
@@ -132,7 +143,7 @@ impl Watcher {
       &path,
       std::path::Path::new(project_root),
       &self.store,
-      &None,
+      &self.make_entries_opts,
     )
     .unwrap();
   }
@@ -445,6 +456,7 @@ mod tests {
       glob_entries: None,
       entries: Some(vec![path_1, path_2]),
       cache_dir: None,
+      supported_paths: None,
     });
     assert_eq!(watcher.processed, true);
   }
@@ -457,6 +469,7 @@ mod tests {
       glob_entries: Some(vec!["**/*.js".to_string()]),
       entries: None,
       cache_dir: None,
+      supported_paths: None,
     });
 
     let duration = std::time::Instant::now();
@@ -479,6 +492,7 @@ mod tests {
       glob_entries: None,
       entries: Some(vec![path_1.clone(), path_2.clone()]),
       cache_dir: None,
+      supported_paths: None,
     });
 
     // First call, we expect to detect two changes of type added
@@ -549,6 +563,7 @@ mod tests {
       glob_entries: None,
       entries: Some(vec![path_1]),
       cache_dir: None,
+      supported_paths: None,
     });
     assert_eq!(watcher.processed, true);
 

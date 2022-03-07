@@ -1,6 +1,7 @@
-use nom::branch::{alt};
+use nom::branch::alt;
 use nom::bytes::complete::{take, take_until};
-use nom::character::complete::{anychar, one_of, space1, space0};
+use nom::character::complete::{anychar, one_of, space0, space1};
+use nom::combinator::{cond, verify};
 use nom::multi::{many0, many_till, separated_list1};
 use nom::{bytes::complete::tag, IResult};
 use std::ops::Add;
@@ -98,14 +99,27 @@ fn parse_css_import_statement(input: &str) -> IResult<&str, Vec<String>> {
   ))
 }
 
-pub fn parse_deps(input: &str) -> Vec<String> {
+pub struct ParseConditions {
+  pub esm: bool,
+  pub require: bool,
+  pub lazy_esm: bool,
+  pub css: bool,
+}
+
+pub fn parse_deps(input: &str, conditions: ParseConditions) -> Vec<String> {
   let (_, res) = many0(many_till(
     anychar,
     alt((
-      parse_esm_statement,
-      parse_require_statement,
-      parse_lazy_esm_statement,
-      parse_css_import_statement,
+      verify(cond(conditions.esm, parse_esm_statement), |x| x.is_some()),
+      verify(cond(conditions.require, parse_require_statement), |x| {
+        x.is_some()
+      }),
+      verify(cond(conditions.lazy_esm, parse_lazy_esm_statement), |x| {
+        x.is_some()
+      }),
+      verify(cond(conditions.css, parse_css_import_statement), |x| {
+        x.is_some()
+      }),
     )),
   ))(input)
   .unwrap_or_default();
@@ -114,13 +128,14 @@ pub fn parse_deps(input: &str) -> Vec<String> {
     .into_iter()
     .map(|(_, path)| path)
     .flatten()
+    .flatten()
     .collect()
 }
 
 #[cfg(test)]
 mod tests {
   use crate::parser::{
-    parse_deps, parse_css_import_statement, parse_esm_statement, parse_lazy_esm_statement,
+    parse_css_import_statement, parse_deps, parse_esm_statement, parse_lazy_esm_statement,
     parse_require_statement,
   };
 
@@ -249,6 +264,12 @@ mod tests {
       blahblah
       require('end.js')
     "#,
+      crate::parser::ParseConditions {
+        esm: true,
+        require: true,
+        lazy_esm: true,
+        css: true,
+      },
     );
 
     assert_eq!(
@@ -264,6 +285,6 @@ mod tests {
         "./style2.scss",
         "end.js"
       ]
-    )
+    );
   }
 }

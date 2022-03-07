@@ -1,10 +1,8 @@
 use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use glob::glob;
-use lazy_static::lazy_static;
 use memoize::memoize;
 use rayon::prelude::*;
-use regex::{Regex};
 use std::collections::HashSet;
 use std::fs::*;
 use std::path::{Component, Path, PathBuf};
@@ -12,8 +10,8 @@ use std::path::{Component, Path, PathBuf};
 #[path = "./path_clean.rs"]
 mod path_clean;
 
+use crate::parser::{parse_deps, ParseConditions};
 use path_clean::*;
-use crate::parser::parse_deps;
 
 #[derive(Debug)]
 pub struct FileItem {
@@ -63,20 +61,25 @@ impl FileItem {
   }
 }
 
+#[derive(Clone)]
 pub struct MakeEntriesOptions {
-  pub supported_paths: Vec<SupportedPath>,
+  pub supported_paths: Option<SupportedPaths>,
 }
 
-pub enum SupportedPath {
-  ESM(Vec<String>),
-  DynEsmReq(Vec<String>),
+#[napi(object)]
+#[derive(Clone)]
+pub struct SupportedPaths {
+  pub esm: Option<Vec<String>>,
+  pub dyn_esm: Option<Vec<String>>,
+  pub cjs: Option<Vec<String>>,
+  pub css: Option<Vec<String>>,
 }
 
 pub fn make_entries(
   entry_paths: Vec<PathBuf>,
   entry_globs: Option<Vec<&str>>,
   project_path: PathBuf,
-  opts: Option<MakeEntriesOptions>,
+  opts: &Option<MakeEntriesOptions>,
 ) -> (DashMap<String, FileItem>, Vec<FileItem>) {
   let store = DashMap::new();
   let entries = make_missing_entries(entry_paths, entry_globs, project_path, &store, opts);
@@ -88,7 +91,7 @@ pub fn make_missing_entries(
   entry_globs: Option<Vec<&str>>,
   project_path: PathBuf,
   store: &DashMap<String, FileItem>,
-  opts: Option<MakeEntriesOptions>,
+  opts: &Option<MakeEntriesOptions>,
 ) -> Vec<FileItem> {
   let mut paths: Vec<PathBuf> = entry_paths;
 
@@ -108,7 +111,7 @@ pub fn make_missing_entries(
   paths.retain(|x| !store.contains_key(x.to_str().unwrap()));
 
   paths.par_iter().for_each(|p| {
-    make_file_item(p, &project_path, store, &opts);
+    make_file_item(p, &project_path, store, opts);
   });
   let entry_path_str_list: Vec<String> = paths
     .iter()
@@ -121,20 +124,6 @@ pub fn make_missing_entries(
   entries
 }
 
-lazy_static! {
-  static ref NAMED_MODULE_RE: Regex =
-    Regex::new(r#"(?:import|export)\s+.+from\s+['"](.+)['"]"#).unwrap();
-  static ref UNNAMED_MODULE_RE: Regex = Regex::new(r#"(?:import|export)\s+['"](.+)['"]"#).unwrap();
-  static ref REQUIRE_DYNIMP_RE: Regex =
-    Regex::new(r#"(?:require|import)\(['"](.+)['"]\)"#).unwrap();
-  static ref DEFAULT_JS_EXTS: Vec<String> = vec!["ts", "js", "cjs", "mjs"]
-    .iter()
-    .map(|x| x.to_string())
-    .collect();
-  static ref DEFAULT_SUPPATH_ESM: SupportedPath = SupportedPath::ESM(DEFAULT_JS_EXTS.clone());
-  static ref DEFAULT_SUPPATH_DYN_ESM: SupportedPath =
-    SupportedPath::DynEsmReq(DEFAULT_JS_EXTS.clone());
-}
 pub fn make_file_item<'a>(
   file_path: &'a Path,
   project_path: &'a Path,
@@ -150,23 +139,66 @@ pub fn make_file_item<'a>(
     );
   }
 
-  let supported_paths: Vec<&SupportedPath> = match opts {
-    Some(opts_val) => opts_val.supported_paths.iter().collect(),
-    _ => vec![&DEFAULT_SUPPATH_ESM, &DEFAULT_SUPPATH_DYN_ESM],
-  };
-  let mut supported_exts: Vec<&String> = Vec::new();
-  for supported_path in &supported_paths {
-    match *supported_path {
-      SupportedPath::ESM(exts) => {
-        supported_exts.extend(exts.iter());
-      }
-      SupportedPath::DynEsmReq(exts) => {
-        supported_exts.extend(exts.iter());
-      }
+  let supported_paths: SupportedPaths = {
+    let mut value = match opts {
+      Some(opts_val) => match &opts_val.supported_paths {
+        Some(sup_paths) => sup_paths.clone(),
+        _ => SupportedPaths {
+          esm: None,
+          dyn_esm: None,
+          cjs: None,
+          css: None,
+        },
+      },
+      _ => SupportedPaths {
+        esm: None,
+        dyn_esm: None,
+        cjs: None,
+        css: None,
+      },
+    };
+    let js_exts: Vec<String> = vec!["cjs", "esm", "js", "ts", "tsx", "jsx", "tjs", "tsm"]
+      .iter()
+      .map(|x| x.to_string())
+      .collect();
+    let style_exts: Vec<String> = vec!["css", "scss", "sass"]
+      .iter()
+      .map(|x| x.to_string())
+      .collect();
+    if value.esm.is_none() {
+      value.esm = Some(
+        js_exts
+          .clone()
+          .into_iter()
+          .chain([String::from("mdx")].into_iter())
+          .collect(),
+      );
     }
-  }
+    if value.dyn_esm.is_none() {
+      value.dyn_esm = Some(js_exts.clone());
+    }
+    if value.cjs.is_none() {
+      value.cjs = Some(js_exts);
+    }
+    if value.css.is_none() {
+      value.css = Some(style_exts);
+    }
+    value
+  };
+
   let file_ext = file_path.extension().unwrap().to_str().unwrap().to_string();
-  if !supported_exts.iter().any(|x| (*x).eq(&file_ext)) {
+  let parse_conditions = ParseConditions {
+    css: supported_paths.css.unwrap().contains(&file_ext),
+    esm: supported_paths.esm.unwrap().contains(&file_ext),
+    lazy_esm: supported_paths.dyn_esm.unwrap().contains(&file_ext),
+    require: supported_paths.cjs.unwrap().contains(&file_ext),
+  };
+
+  if !parse_conditions.css
+    && !parse_conditions.esm
+    && !parse_conditions.lazy_esm
+    && !parse_conditions.require
+  {
     return None;
   }
 
@@ -183,7 +215,7 @@ pub fn make_file_item<'a>(
   let content = read_to_string(&file_path)
     .unwrap_or_else(|_| panic!("Couldn't read file {} ", file_path.to_str().unwrap()));
 
-  let imports = parse_deps(&content);
+  let imports = parse_deps(&content, parse_conditions);
   for source in imports {
     let maybe_path_buf = if source.starts_with("./") || source.starts_with("../") {
       let dir = file_path.parent().unwrap();
@@ -398,7 +430,7 @@ mod tests {
     paths.push(path_1);
     paths.push(path_2);
 
-    let (_, entries) = make_entries(paths, None, PROJECT_A_PATH.to_path_buf(), None);
+    let (_, entries) = make_entries(paths, None, PROJECT_A_PATH.to_path_buf(), &None);
     assert_eq!(entries.len(), 2 as usize);
   }
 
@@ -408,7 +440,7 @@ mod tests {
       Vec::new(),
       Some(vec!["**/relative_*.js"]),
       PROJECT_A_PATH.to_path_buf(),
-      None,
+      &None,
     );
     assert_eq!(entries.len(), 4 as usize);
   }
@@ -420,7 +452,7 @@ mod tests {
       Vec::new(),
       Some(vec!["**/*.js"]),
       THREEJS_PATH.to_path_buf(),
-      None,
+      &None,
     );
     println!("Elapsed: {}ms", duration.elapsed().as_millis());
     println!("Processed files: {}", store.len());
@@ -556,24 +588,6 @@ mod tests {
     assert_eq!(
       deps.contains(&PROJECT_A_PATH.join("b.js").to_str().unwrap().to_string()),
       true
-    );
-  }
-
-  #[test]
-  fn make_user_file_export() {
-    let store = DashMap::new();
-    let path = PROJECT_A_PATH.join("export.js");
-
-    let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
-
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
-    let dep_1_path_str = &deps[0];
-    assert_eq!(path_str, path.to_str().unwrap());
-    assert_eq!(
-      dep_1_path_str,
-      PROJECT_A_PATH.join("b.js").to_str().unwrap()
     );
   }
 
