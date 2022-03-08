@@ -228,10 +228,7 @@ pub fn make_file_item<'a>(
         .expect("Couldn't find node_modules folder");
       resolve_node_module(&source, node_modules_path.as_path())
     };
-    if maybe_path_buf.is_none() {
-      return None;
-    }
-    let mut path_buf = maybe_path_buf.unwrap();
+    let mut path_buf = maybe_path_buf?;
     // If the imported file is a directory, we need to resolve it's index file
     if path_buf.is_dir() {
       if let Some(found) = resolve_index(&path_buf) {
@@ -323,11 +320,9 @@ pub fn find_node_modules_dir(root: PathBuf) -> Option<PathBuf> {
     if counter >= 100 {
       return None;
     }
-    for entry in root.read_dir().unwrap() {
-      if let Ok(entry) = entry {
-        if entry.file_name().eq("node_modules") {
-          return Some(PathBuf::from(entry.path()));
-        }
+    for entry in root.read_dir().unwrap().flatten() {
+      if entry.file_name().eq("node_modules") {
+        return Some(entry.path());
       }
     }
     counter += 1;

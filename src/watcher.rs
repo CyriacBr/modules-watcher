@@ -93,7 +93,7 @@ impl Watcher {
     let entry_globs: Vec<&str> = globs_vec.iter().map(|x| &x[..]).collect();
 
     let make_entries_opts = Some(MakeEntriesOptions {
-      supported_paths: opts.supported_paths.clone(),
+      supported_paths: opts.supported_paths,
     });
 
     let (store, entries) = make_entries(
