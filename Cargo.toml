@@ -3,8 +3,14 @@ edition = "2021"
 name = "modules-watcher"
 version = "0.0.0"
 
+[features]
+without-napi = ["napi-derive/noop"]
+
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
+
+[[bin]]
+name="bin"
 
 [dependencies]
 # Default enable napi4 feature, see https://nodejs.org/api/n-api.html#node-api-version-matrix
