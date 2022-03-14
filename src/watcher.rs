@@ -33,6 +33,7 @@ pub struct SetupOptions {
 #[napi(object)]
 #[derive(Clone)]
 pub struct EntryChange {
+  // TODO: use Enum
   pub change_type: String,
   pub entry: String,
   pub tree: Option<Vec<String>>,
@@ -118,7 +119,7 @@ impl Watcher {
     self.entries.iter().map(|x| x.to_napi()).collect()
   }
 
-  fn update_store(&self) {
+  fn update_store(&mut self) {
     let opts = &self.setup_options;
     let entries_vec = opts.entries.clone().unwrap_or_default();
     let project_root = (&opts.project_root).to_string();
@@ -126,13 +127,14 @@ impl Watcher {
     let entry_paths: Vec<PathBuf> = entries_vec.iter().map(PathBuf::from).collect();
     let entry_globs: Vec<&str> = globs_vec.iter().map(|x| &x[..]).collect();
 
-    make_missing_entries(
+    let new_entries = make_missing_entries(
       entry_paths,
       Some(entry_globs),
       PathBuf::from(project_root),
       &self.store,
       &self.make_entries_opts,
     );
+    self.entries.extend(new_entries.into_iter());
   }
 
   fn make_file_deps(&self, file_path: &str) {
@@ -190,13 +192,12 @@ impl Watcher {
   }
 
   #[napi]
-  pub fn make_changes(&self) -> Vec<EntryChange> {
+  pub fn make_changes(&mut self) -> Vec<EntryChange> {
     let old_checksum_store = self.get_checksums_cache();
     let new_checksum_store: DashMap<String, u32> = DashMap::new();
 
     self.update_store();
 
-    // update self.entries when store change
     let changes: Vec<EntryChange> = self
       .entries
       .par_iter()
@@ -308,7 +309,7 @@ impl Watcher {
     use std::sync::mpsc::channel;
 
     let paths = self.get_dirs_to_watch();
-    let self_clone = self.clone_struct();
+    let mut self_clone = self.clone_struct();
 
     let flag = self.stop_watch_flag.clone();
     let on_event_arced = Arc::new(on_event);
@@ -321,7 +322,7 @@ impl Watcher {
       }
 
       let on_event_cb = on_event_arced.clone();
-      let event_handler = |path: PathBuf, event: notify::DebouncedEvent| {
+      let mut event_handler = |path: PathBuf, event: notify::DebouncedEvent| {
         match event {
           Event::Create(_) => {
             self_clone.update_store();
@@ -463,7 +464,7 @@ mod tests {
 
   #[test]
   fn make_changes_three_js() {
-    let watcher = Watcher::setup(SetupOptions {
+    let mut watcher = Watcher::setup(SetupOptions {
       project: "Project threejs".to_string(),
       project_root: THREEJS_PATH.to_str().unwrap().to_string(),
       glob_entries: Some(vec!["**/*.js".to_string()]),
@@ -486,7 +487,7 @@ mod tests {
       .unwrap()
       .to_string();
     let path_2 = PROJECT_A_PATH.join("y.js").to_str().unwrap().to_string();
-    let watcher = Watcher::setup(SetupOptions {
+    let mut watcher = Watcher::setup(SetupOptions {
       project: "Project A".to_string(),
       project_root: PROJECT_A_PATH.to_str().unwrap().to_string(),
       glob_entries: None,
