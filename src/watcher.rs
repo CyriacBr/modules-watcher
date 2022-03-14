@@ -137,7 +137,31 @@ impl Watcher {
     self.entries.extend(new_entries.into_iter());
   }
 
-  // TODO: properly update self.entries
+  fn update_entries_from_store(&mut self) {
+    self.entries = self
+      .entries
+      .iter()
+      .map(|x| {
+        let key = x.path.to_str().unwrap();
+        if let Some(item) = self.store.get(key) {
+          let mut res_item = item.clone_item();
+          res_item.deps.retain(|x| self.store.contains_key(x));
+          return Some(res_item);
+        }
+        None
+      })
+      .filter(|x| x.is_some())
+      .map(|x| x.unwrap())
+      .collect();
+  }
+
+  fn remove_dep(&self, dep: &str) {
+    self.store.remove(dep);
+    self.store.par_iter_mut().for_each(|mut x| {
+      x.deps.retain(|d| d != dep);
+    });
+  }
+
   fn make_file_deps(&self, file_path: &str) -> Vec<String> {
     self.store.remove(file_path).unwrap();
     let project_root = &self.setup_options.project_root;
@@ -152,13 +176,13 @@ impl Watcher {
     res.deps.iter().map(String::from).collect()
   }
 
-  fn get_checksums_cache(&self) -> HashMap<String, u32> {
+  fn get_checksums_cache(&self) -> HashMap<String, i32> {
     let path = PathBuf::from(self.cache_dir.clone()).join("checksums");
     if !path.exists() {
       return HashMap::new();
     }
 
-    let mut map: HashMap<String, u32> = HashMap::new();
+    let mut map: HashMap<String, i32> = HashMap::new();
 
     let file = std::fs::File::open(path).unwrap();
     let reader = BufReader::new(file);
@@ -167,14 +191,14 @@ impl Watcher {
       let ln = line.unwrap();
       let slots: Vec<&str> = ln.split_whitespace().collect();
       let path = slots[0];
-      let checksum = str::parse::<u32>(slots[1]).unwrap();
+      let checksum = str::parse::<i32>(slots[1]).unwrap();
       map.insert(path.to_string(), checksum);
     }
 
     map
   }
 
-  fn set_checksum_cache(&self, checksum_store: &DashMap<String, u32>) {
+  fn set_checksum_cache(&self, checksum_store: &DashMap<String, i32>) {
     let mut result = String::from("");
     for ref_multi in checksum_store {
       result += &format!("{} {}\n", ref_multi.key(), ref_multi.value());
@@ -196,7 +220,7 @@ impl Watcher {
   #[napi]
   pub fn make_changes(&mut self) -> Vec<EntryChange> {
     let old_checksum_store = self.get_checksums_cache();
-    let new_checksum_store: DashMap<String, u32> = DashMap::new();
+    let new_checksum_store: DashMap<String, i32> = DashMap::new();
 
     self.update_store();
 
@@ -230,21 +254,19 @@ impl Watcher {
             } else {
               self.get_file_state(dep, &old_checksum_store)
             };
-            println!("file: {}, state: {:?}", dep, state);
-            if state == FileState::Deleted {
-              // self.store.remove(dep);
-              return Some(EntryChange {
-                change_type: if is_entry {
-                  "deleted".to_string()
-                } else {
-                  "dep-deleted".to_string()
-                },
-                entry: x.path.to_str().unwrap().to_string(),
-                tree: if is_entry { None } else { Some(tree.clone()) },
-              });
-            }
             new_checksum_store.insert(dep.to_string(), checksum);
             match state {
+              FileState::Deleted => {
+                return Some(EntryChange {
+                  change_type: if is_entry {
+                    "deleted".to_string()
+                  } else {
+                    "dep-deleted".to_string()
+                  },
+                  entry: x.path.to_str().unwrap().to_string(),
+                  tree: if is_entry { None } else { Some(tree.clone()) },
+                });
+              },
               FileState::Created => {
                 return Some(EntryChange {
                   change_type: if is_entry {
@@ -279,6 +301,7 @@ impl Watcher {
       .collect();
 
     self.set_checksum_cache(&new_checksum_store);
+    self.update_entries_from_store();
 
     changes
   }
@@ -286,18 +309,27 @@ impl Watcher {
   fn get_file_state(
     &self,
     file_path: &str,
-    checksum_store: &HashMap<String, u32>,
-  ) -> (u32, FileState) {
+    checksum_store: &HashMap<String, i32>,
+  ) -> (i32, FileState) {
     if !Path::new(file_path).exists() {
-      return (0, FileState::Deleted);
+      if let Some(res) = checksum_store.get(file_path) {
+        if *res == -1 {
+          return (-1, FileState::NotModified);
+        }
+      }
+      return (-1, FileState::Deleted);
     }
     let content = std::fs::read_to_string(&file_path).unwrap();
-    let curr_checksum = crc32fast::hash(content.as_bytes());
-    if let Some(res) = checksum_store.get(file_path) {
-      if curr_checksum == *res {
+    let curr_checksum = crc32fast::hash(content.as_bytes()) as i32;
+    if let Some(old_value) = checksum_store.get(file_path) {
+      if curr_checksum == *old_value {
         (curr_checksum, FileState::NotModified)
       } else {
-        (curr_checksum, FileState::Modified)
+        if *old_value == -1 {
+          (curr_checksum, FileState::Created)
+        } else {
+          (curr_checksum, FileState::Modified)
+        }
       }
     } else {
       (curr_checksum, FileState::Created)
