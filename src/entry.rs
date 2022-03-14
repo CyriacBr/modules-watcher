@@ -361,6 +361,7 @@ fn resolve_node_module(module: &str, node_modules: &Path) -> Option<PathBuf> {
 
     // If we have "exports": {}
     if json["exports"].is_object() {
+      // TODO: handle .   =>  [{default: './index.js'}, './index.js'] (see tape)
       // transforms module to a relative path
       // foo     => .
       // foo/bar => ./bar
