@@ -7,6 +7,7 @@ use nom::{bytes::complete::tag, IResult};
 use std::ops::Add;
 
 fn parse_esm_statement(input: &str) -> IResult<&str, Vec<String>> {
+  // let (input, _) = nom::bytes::streaming::take_until("import")(input)?;
   let (input, _) = tag("import")(input)?;
   let (input, _) = space1(input)?;
 
@@ -17,8 +18,17 @@ fn parse_esm_statement(input: &str) -> IResult<&str, Vec<String>> {
 
     Ok((input, ()))
   }
-  let (input, _) = parse_named(input).unwrap_or((input, ()));
 
+  if one_of::<_, _, (&str, nom::error::ErrorKind)>("\"'")(input).is_ok() {
+    let (input, _) = one_of("\"'")(input)?;
+    let (input, (str_tab, _)): (&str, (Vec<&str>, char)) =
+      many_till(take(1usize), one_of("\"'"))(input)?;
+
+    let path = str_tab.join("");
+    return Ok((input, vec![path]));
+  }
+
+  let (input, _) = parse_named(input).unwrap_or((input, ()));
   let (input, _) = one_of("\"'")(input)?;
   let (input, (str_tab, _)): (&str, (Vec<&str>, char)) =
     many_till(take(1usize), one_of("\"'"))(input)?;
@@ -247,44 +257,78 @@ mod tests {
 
   #[test]
   fn test_parse_all() {
-    let res = parse_deps(
-      r#"require('before.js');
-      blahblah
-      import foo from 'foo.js'
-      blabhlah
-      require('bar.js')
-      blahblah
-      import { foo2 } from 'foo2.js'
-      blahblah
-      require('baz.js');
-      blah
-      import("foo3.js")
-      blah
-      @import "style.css", "style2.scss"
-      blahblah
-      require('end.js')
-    "#,
-      crate::parser::ParseConditions {
-        esm: true,
-        require: true,
-        lazy_esm: true,
-        css: true,
-      },
-    );
+    {
+      let res = parse_deps(
+        r#"require('before.js');
+        blahblah
+        import foo from 'foo.js'
+        blabhlah
+        require('bar.js')
+        blahblah
+        import { foo2 } from 'foo2.js'
+        import './foo3.js';
+        blahblah
+        require('baz.js');
+        blah
+        import("foo3.js")
+        blah
+        @import "style.css", "style2.scss"
+        blahblah
+        require('end.js')
+      "#,
+        crate::parser::ParseConditions {
+          esm: true,
+          require: true,
+          lazy_esm: true,
+          css: true,
+        },
+      );
 
-    assert_eq!(
-      res,
-      vec![
-        "before.js",
-        "foo.js",
-        "bar.js",
-        "foo2.js",
-        "baz.js",
-        "foo3.js",
-        "./style.css",
-        "./style2.scss",
-        "end.js"
-      ]
-    );
+      assert_eq!(
+        res,
+        vec![
+          "before.js",
+          "foo.js",
+          "bar.js",
+          "foo2.js",
+          "./foo3.js",
+          "baz.js",
+          "foo3.js",
+          "./style.css",
+          "./style2.scss",
+          "end.js"
+        ]
+      );
+    }
+
+    {
+      let res = parse_deps(
+        r#"import * as B from './b.js';
+        import { FILE_1 } from './file1.js';
+        import file2 from './file2.js';
+        import './file3.js';
+        import { FILE_4 } from './file4';
+        import { FILE_5 } from './file5';
+      "#,
+        crate::parser::ParseConditions {
+          esm: true,
+          require: false,
+          lazy_esm: false,
+          css: false,
+        },
+      );
+
+      assert_eq!(
+        res,
+        vec![
+          "./b.js",
+          "./file1.js",
+          "./file2.js",
+          "./file3.js",
+          "./file4",
+          "./file5",
+        ]
+      );
+    }
   }
 }
