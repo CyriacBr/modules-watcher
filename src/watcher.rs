@@ -39,7 +39,7 @@ pub struct EntryChange {
   pub tree: Option<Vec<String>>,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum FileState {
   NotModified,
   Modified,
@@ -137,17 +137,19 @@ impl Watcher {
     self.entries.extend(new_entries.into_iter());
   }
 
-  fn make_file_deps(&self, file_path: &str) {
+  // TODO: properly update self.entries
+  fn make_file_deps(&self, file_path: &str) -> Vec<String> {
     self.store.remove(file_path).unwrap();
     let project_root = &self.setup_options.project_root;
     let path = PathBuf::from(file_path);
-    make_file_item(
+    let res = make_file_item(
       &path,
       std::path::Path::new(project_root),
       &self.store,
       &self.make_entries_opts,
     )
     .unwrap();
+    res.deps.iter().map(String::from).collect()
   }
 
   fn get_checksums_cache(&self) -> HashMap<String, u32> {
@@ -202,9 +204,20 @@ impl Watcher {
       .entries
       .par_iter()
       .map(|x| {
+        // for each entry
+
+        // we update entry deps if the file got modified
+        let entry_path = x.path.to_str().unwrap();
+        let (entry_checksum, entry_state) = self.get_file_state(entry_path, &old_checksum_store);
+        let mut deps = x.deps.iter().map(String::from).collect();
+        if entry_state == FileState::Modified {
+          deps = self.make_file_deps(entry_path);
+        }
+
         let mut tree: Vec<String> = Vec::new();
         let mut files = vec![x.path.to_str().unwrap().to_string()];
-        files.extend(x.deps.clone());
+        files.extend(deps.into_iter());
+        // collect changes for each deps (entry included) of the current entry
         let entry_changes: Vec<Option<EntryChange>> = files
           .iter()
           .enumerate()
@@ -212,7 +225,12 @@ impl Watcher {
             tree.insert(0, dep.to_string());
             let is_entry = i == 0;
             // Try to determine if the file changed
-            let (checksum, state) = self.get_file_state(dep, &old_checksum_store);
+            let (checksum, state) = if is_entry {
+              (entry_checksum, entry_state.clone())
+            } else {
+              self.get_file_state(dep, &old_checksum_store)
+            };
+            println!("file: {}, state: {:?}", dep, state);
             if state == FileState::Deleted {
               // self.store.remove(dep);
               return Some(EntryChange {
@@ -239,10 +257,6 @@ impl Watcher {
                 });
               }
               FileState::Modified => {
-                if is_entry {
-                  // if entry changed, recompute deps
-                  self.make_file_deps(dep);
-                }
                 return Some(EntryChange {
                   change_type: if is_entry {
                     "modified".to_string()
