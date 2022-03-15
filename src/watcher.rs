@@ -339,6 +339,7 @@ impl Watcher {
   #[napi]
   pub fn get_dirs_to_watch(&self) -> Vec<String> {
     let mut set = HashSet::new();
+    set.insert(self.setup_options.project_root.clone());
     for ref_multi in &self.store {
       let parent = ref_multi.path.parent().unwrap();
       set.insert(parent.to_str().unwrap().to_string());
@@ -376,6 +377,7 @@ impl Watcher {
           Event::Write(_) => {
             if self_clone.store.contains_key(path.to_str().unwrap()) {
               self_clone.make_file_deps(path.to_str().unwrap());
+              self_clone.update_entries_from_store();
             }
           }
           _ => {}
