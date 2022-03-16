@@ -34,10 +34,8 @@ export interface EntryChange {
 }
 export type Watcher = ModulesWatcher
 export class ModulesWatcher {
-  setupOptions: SetupOptions
-  processed: boolean
-  cacheDir: string
   static setup(opts: SetupOptions): Watcher
+  cacheDir(): string
   getEntries(): Array<NapiFileItem>
   makeChanges(): Array<EntryChange>
   getDirsToWatch(): Array<string>

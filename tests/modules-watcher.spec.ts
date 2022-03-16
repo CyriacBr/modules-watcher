@@ -89,8 +89,8 @@ test(`make_changes()`, async (t) => {
   });
 
   t.test(`first call flag everything as created`, async (t) => {
-    if (fs.existsSync(watcher.cacheDir)) {
-      fs.rmSync(watcher.cacheDir, { recursive: true });
+    if (fs.existsSync(watcher.cacheDir())) {
+      fs.rmSync(watcher.cacheDir(), { recursive: true });
     }
     let changes = watcher.makeChanges();
 
@@ -279,8 +279,8 @@ test(`watch()`, async (t) => {
     projectRoot: projectDPath,
     globEntries: ["**/to-watch*.js"],
   });
-  if (fs.existsSync(watcher.cacheDir)) {
-    fs.rmSync(watcher.cacheDir, { recursive: true });
+  if (fs.existsSync(watcher.cacheDir())) {
+    fs.rmSync(watcher.cacheDir(), { recursive: true });
   }
 
   t.test(`detect new entries`, async (t) => {
@@ -303,7 +303,6 @@ test(`watch()`, async (t) => {
   });
 
   t.test(`detect new dep from existing file`, async (t) => {
-    watcher.makeChanges();
     return new Promise((resolve, reject) => {
       let rejectTimeout = setTimeout(() => {
         reject();
@@ -328,7 +327,6 @@ test(`watch()`, async (t) => {
   });
 
   t.test(`detect modified dep`, async (t) => {
-    watcher.makeChanges();
     return new Promise((resolve, reject) => {
       let rejectTimeout = setTimeout(() => {
         reject();
@@ -351,7 +349,6 @@ test(`watch()`, async (t) => {
   });
 
   t.test(`watch dir from new dep`, async (t) => {
-    watcher.makeChanges();
     let counter = 0;
     return new Promise((resolve, reject) => {
       let rejectTimeout = setTimeout(() => {
@@ -362,15 +359,14 @@ test(`watch()`, async (t) => {
           // to-watch1 changed
           t.ok(res);
           t.is(res![0].path, Path.join(projectDPath, "./to-watch1.js"));
-          // console.log('watcher.getDirsToWatch() :>> ', watcher.getDirsToWatch());
-          // t.is(
-          //   watcher
-          //     .getDirsToWatch()
-          //     .includes(
-          //       Path.join(projectDPath, "../../../node_modules/ts-node/dist")
-          //     ),
-          //   true
-          // );
+          t.is(
+            watcher
+              .getDirsToWatch()
+              .includes(
+                Path.join(projectDPath, "../../../node_modules/ts-node/dist")
+              ),
+            true
+          );
           counter++;
           setTimeout(() => {
             fs.writeFileSync(
@@ -405,7 +401,6 @@ test(`watch()`, async (t) => {
   });
 
   t.test(`detect removed entry`, async (t) => {
-    watcher.makeChanges();
     return new Promise((resolve, reject) => {
       let rejectTimeout = setTimeout(() => {
         reject();

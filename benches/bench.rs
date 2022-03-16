@@ -37,7 +37,7 @@ fn bench_make_entries(c: &mut Criterion) {
 }
 
 fn bench_make_changes(c: &mut Criterion) {
-  let watcher = Watcher::setup(SetupOptions {
+  let mut watcher = Watcher::setup(SetupOptions {
     project: "threejs".to_string(),
     project_root: THREEJS_PATH.to_str().unwrap().to_string(),
     glob_entries: Some(vec!["**/*.js".to_string()]),

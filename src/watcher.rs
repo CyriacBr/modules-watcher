@@ -12,7 +12,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::TryRecvError;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{
   collections::HashMap,
   io::{BufRead, BufReader},
@@ -47,36 +47,37 @@ pub enum FileState {
   Deleted,
 }
 
-#[napi(js_name = "ModulesWatcher")]
-pub struct Watcher {
+pub struct WatcherInner {
   pub setup_options: SetupOptions,
   store: DashMap<String, FileItem>,
   entries: Vec<FileItem>,
   pub processed: bool,
   pub cache_dir: String,
-  stop_watch_flag: Arc<AtomicBool>,
   make_entries_opts: Option<MakeEntriesOptions>,
 }
 
-#[napi]
-impl Watcher {
-  pub fn clone_struct(&self) -> Watcher {
+#[napi(js_name = "ModulesWatcher")]
+pub struct Watcher {
+  inner: Arc<Mutex<WatcherInner>>,
+  stop_watch_flag: Arc<AtomicBool>,
+}
+
+impl WatcherInner {
+  pub fn clone_struct(&self) -> WatcherInner {
     let store: DashMap<String, FileItem> = DashMap::new();
     for ref_multi in &self.store {
       store.insert(ref_multi.key().to_string(), ref_multi.value().clone_item());
     }
-    Watcher {
+    WatcherInner {
       setup_options: self.setup_options.clone(),
       store,
       entries: self.entries.iter().map(|x| x.clone_item()).collect(),
       processed: self.processed,
       cache_dir: self.cache_dir.clone(),
-      stop_watch_flag: self.stop_watch_flag.clone(),
       make_entries_opts: self.make_entries_opts.clone(),
     }
   }
 
-  #[napi(factory)]
   pub fn setup(opts: SetupOptions) -> Self {
     let watcher_opts = opts.clone();
     let entries_vec = opts.entries.unwrap_or_default();
@@ -103,18 +104,16 @@ impl Watcher {
       PathBuf::from(project_root),
       &make_entries_opts,
     );
-    Watcher {
+    WatcherInner {
       setup_options: watcher_opts,
       store,
       entries,
       processed: true,
       cache_dir,
-      stop_watch_flag: Arc::new(AtomicBool::new(false)),
       make_entries_opts,
     }
   }
 
-  #[napi]
   pub fn get_entries(&self) -> Vec<NapiFileItem> {
     self.entries.iter().map(|x| x.to_napi()).collect()
   }
@@ -178,13 +177,13 @@ impl Watcher {
     res.deps.iter().map(String::from).collect()
   }
 
-  fn get_checksums_cache(&self) -> HashMap<String, i32> {
+  fn get_checksums_cache(&self) -> HashMap<String, i64> {
     let path = PathBuf::from(self.cache_dir.clone()).join("checksums");
     if !path.exists() {
       return HashMap::new();
     }
 
-    let mut map: HashMap<String, i32> = HashMap::new();
+    let mut map: HashMap<String, i64> = HashMap::new();
 
     let file = std::fs::File::open(path).unwrap();
     let reader = BufReader::new(file);
@@ -193,14 +192,14 @@ impl Watcher {
       let ln = line.unwrap();
       let slots: Vec<&str> = ln.split_whitespace().collect();
       let path = slots[0];
-      let checksum = str::parse::<i32>(slots[1]).unwrap();
+      let checksum = str::parse::<i64>(slots[1]).unwrap();
       map.insert(path.to_string(), checksum);
     }
 
     map
   }
 
-  fn set_checksum_cache(&self, checksum_store: &DashMap<String, i32>) {
+  fn set_checksum_cache(&self, checksum_store: &DashMap<String, i64>) {
     let mut result = String::from("");
     for ref_multi in checksum_store {
       result += &format!("{} {}\n", ref_multi.key(), ref_multi.value());
@@ -219,10 +218,9 @@ impl Watcher {
     std::fs::write(path, result.trim_end()).unwrap();
   }
 
-  #[napi]
   pub fn make_changes(&mut self) -> Vec<EntryChange> {
     let old_checksum_store = self.get_checksums_cache();
-    let new_checksum_store: DashMap<String, i32> = DashMap::new();
+    let new_checksum_store: DashMap<String, i64> = DashMap::new();
 
     self.update_store();
 
@@ -268,7 +266,7 @@ impl Watcher {
                   entry: x.path.to_str().unwrap().to_string(),
                   tree: if is_entry { None } else { Some(tree.clone()) },
                 });
-              },
+              }
               FileState::Created => {
                 return Some(EntryChange {
                   change_type: if is_entry {
@@ -311,8 +309,8 @@ impl Watcher {
   fn get_file_state(
     &self,
     file_path: &str,
-    checksum_store: &HashMap<String, i32>,
-  ) -> (i32, FileState) {
+    checksum_store: &HashMap<String, i64>,
+  ) -> (i64, FileState) {
     if !Path::new(file_path).exists() {
       if let Some(res) = checksum_store.get(file_path) {
         if *res == -1 {
@@ -322,7 +320,7 @@ impl Watcher {
       return (-1, FileState::Deleted);
     }
     let content = std::fs::read_to_string(&file_path).unwrap();
-    let curr_checksum = crc32fast::hash(content.as_bytes()) as i32;
+    let curr_checksum = crc32fast::hash(content.as_bytes()) as i64;
     if let Some(old_value) = checksum_store.get(file_path) {
       if curr_checksum == *old_value {
         (curr_checksum, FileState::NotModified)
@@ -338,7 +336,6 @@ impl Watcher {
     }
   }
 
-  #[napi]
   pub fn get_dirs_to_watch(&self) -> Vec<String> {
     let mut set = HashSet::new();
     set.insert(self.setup_options.project_root.clone());
@@ -348,6 +345,46 @@ impl Watcher {
       set.insert(parent.to_str().unwrap().to_string());
     }
     set.into_iter().collect()
+  }
+}
+
+#[napi]
+impl Watcher {
+  #[napi(factory)]
+  pub fn setup(opts: SetupOptions) -> Self {
+    let inner = WatcherInner::setup(opts);
+    Watcher {
+      inner: Arc::new(Mutex::new(inner)),
+      stop_watch_flag: Arc::new(AtomicBool::new(false)),
+    }
+  }
+
+  pub fn setup_options(&self) -> SetupOptions {
+    self.inner.lock().unwrap().setup_options.clone()
+  }
+
+  pub fn processed(&self) -> bool {
+    self.inner.lock().unwrap().processed
+  }
+
+  #[napi]
+  pub fn cache_dir(&self) -> String {
+    self.inner.lock().unwrap().cache_dir.clone()
+  }
+
+  #[napi]
+  pub fn get_entries(&self) -> Vec<NapiFileItem> {
+    self.inner.lock().unwrap().get_entries()
+  }
+
+  #[napi]
+  pub fn make_changes(&mut self) -> Vec<EntryChange> {
+    self.inner.lock().unwrap().make_changes()
+  }
+
+  #[napi]
+  pub fn get_dirs_to_watch(&self) -> Vec<String> {
+    self.inner.lock().unwrap().get_dirs_to_watch()
   }
 
   pub fn watch<F>(&mut self, retrieve_entries: bool, on_event: F)
@@ -359,12 +396,13 @@ impl Watcher {
     use std::sync::mpsc::channel;
 
     let paths = self.get_dirs_to_watch();
-    let mut self_clone = self.clone_struct();
 
     let flag = self.stop_watch_flag.clone();
     let on_event_arced = Arc::new(on_event);
-    // TODO: ? after watching, update self.store from self_clone.store
+    let inner = self.inner.clone();
     std::thread::spawn(move || {
+      // let mut mutself =  inner.lock().unwrap();
+
       let (tx, rx) = channel();
       let mut watcher = watcher(tx, std::time::Duration::from_millis(200)).unwrap();
 
@@ -374,20 +412,23 @@ impl Watcher {
 
       let on_event_cb = on_event_arced.clone();
       let mut event_handler = |path: PathBuf, event: notify::DebouncedEvent| {
+        let mut mutself = inner.lock().unwrap();
         println!("event_handler called");
         let path_str = path.to_str().unwrap();
         let mut need_watch_refresh = false;
         match event {
           Event::Create(_) => {
-            self_clone.make_file_deps(path_str);
-            self_clone.update_store();
-            self_clone.update_entries_from_store();
-            need_watch_refresh = true;
+            if path.as_path().is_file() {
+              mutself.make_file_deps(path_str);
+              mutself.update_store();
+              mutself.update_entries_from_store();
+              need_watch_refresh = true;
+            }
           }
           Event::Write(_) => {
-            if self_clone.store.contains_key(path_str) {
-              self_clone.make_file_deps(path_str);
-              self_clone.update_entries_from_store();
+            if mutself.store.contains_key(path_str) {
+              mutself.make_file_deps(path_str);
+              mutself.update_entries_from_store();
               need_watch_refresh = true;
             }
           }
@@ -395,23 +436,24 @@ impl Watcher {
         }
         // If deps changed, we need to watch new dir paths from them
         if need_watch_refresh {
-          println!("watch refreshed: {:?}", self_clone.get_dirs_to_watch());
-          self_clone.get_dirs_to_watch().iter().for_each(|x| {
+          println!("watch refreshed: {:?}", mutself.get_dirs_to_watch());
+          mutself.get_dirs_to_watch().iter().for_each(|x| {
             watcher.watch(x, RecursiveMode::Recursive).unwrap();
           });
         }
+        let maybe_item = mutself.store.get(path_str).map_or(None, |x| Some(x.value().clone_item()));
         if !retrieve_entries {
+          drop(mutself); // unlocl mutex so watcher can be used inside callback
           on_event_cb(None).unwrap();
-        } else if let Some(item) = self_clone.store.get(path_str) {
-          println!("looking for entries of {:?}", item.value());
-          let entries = item.get_entries(&self_clone.store);
-          on_event_cb(Some(
-            entries
-              .iter()
-              .map(|x| self_clone.store.get(x).unwrap().clone_item())
-              .collect(),
-          ))
-          .unwrap();
+        } else if let Some(item) = maybe_item {
+          println!("looking for entries of {:?}", item);
+          let entries = item.get_entries(&mutself.store);
+          let payload = entries
+            .iter()
+            .map(|x| mutself.store.get(x).unwrap().clone_item())
+            .collect();
+          drop(mutself); // unlocl mutex so watcher can be used inside callback
+          on_event_cb(Some(payload)).unwrap();
         }
       };
 
@@ -526,7 +568,7 @@ mod tests {
       cache_dir: None,
       supported_paths: None,
     });
-    assert_eq!(watcher.processed, true);
+    assert_eq!(watcher.processed(), true);
   }
 
   #[test]
@@ -564,10 +606,10 @@ mod tests {
     });
 
     // First call, we expect to detect two changes of type added
-    if std::path::Path::new(&watcher.cache_dir).exists() {
-      std::fs::remove_dir_all(&watcher.cache_dir).unwrap();
+    if std::path::Path::new(&watcher.cache_dir()).exists() {
+      std::fs::remove_dir_all(&watcher.cache_dir()).unwrap();
     } else {
-      std::fs::create_dir(&watcher.cache_dir).unwrap();
+      std::fs::create_dir(&watcher.cache_dir()).unwrap();
     }
     let changes = watcher.make_changes();
     assert_eq!(changes.len(), 3);
@@ -633,7 +675,7 @@ mod tests {
       cache_dir: None,
       supported_paths: None,
     });
-    assert_eq!(watcher.processed, true);
+    assert_eq!(watcher.processed(), true);
 
     let called = Arc::new(AtomicBool::new(false)).clone();
     let called_thread = called.clone();
@@ -641,7 +683,8 @@ mod tests {
       called_thread.store(true, Ordering::Relaxed);
       Ok(())
     });
-    // We modify a dep of y
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    // We modify a dep of y2
     let since_the_epoch = std::time::SystemTime::now()
       .duration_since(UNIX_EPOCH)
       .unwrap();
