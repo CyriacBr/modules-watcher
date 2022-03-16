@@ -397,6 +397,8 @@ impl Watcher {
     let flag = self.stop_watch_flag.clone();
     let on_event_arced = Arc::new(on_event);
     let inner = self.inner.clone();
+
+    let (main_tx, main_rx) = channel();
     std::thread::spawn(move || {
       // let mut mutself =  inner.lock().unwrap();
 
@@ -457,6 +459,8 @@ impl Watcher {
         }
       };
 
+      // notify that watching started
+      main_tx.send(1).unwrap();
       loop {
         if flag.load(Ordering::Relaxed) {
           flag.store(false, Ordering::Relaxed);
@@ -487,6 +491,8 @@ impl Watcher {
       }
     });
     // listening...
+    // wait for watching to start
+    main_rx.recv().unwrap();
   }
 
   #[napi]
@@ -683,7 +689,7 @@ mod tests {
       called_thread.store(true, Ordering::Relaxed);
       Ok(())
     });
-    std::thread::sleep(std::time::Duration::from_secs(1));
+    // std::thread::sleep(std::time::Duration::from_secs(1));
     // We modify a dep of y2
     let since_the_epoch = std::time::SystemTime::now()
       .duration_since(UNIX_EPOCH)

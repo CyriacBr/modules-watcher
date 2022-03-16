@@ -294,9 +294,7 @@ test(`watch()`, async (t) => {
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
-      setTimeout(() => {
-        fs.writeFileSync(Path.join(projectDPath, "./to-watch1.js"), "");
-      }, 0);
+      fs.writeFileSync(Path.join(projectDPath, "./to-watch1.js"), "");
     }).finally(() => {
       watcher.stopWatching();
     });
@@ -315,12 +313,10 @@ test(`watch()`, async (t) => {
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
-      setTimeout(() => {
-        fs.writeFileSync(
-          Path.join(projectDPath, "./to-watch1.js"),
-          "import * as foo from './file1'"
-        );
-      }, 0);
+      fs.writeFileSync(
+        Path.join(projectDPath, "./to-watch1.js"),
+        "import * as foo from './file1'"
+      );
     }).finally(() => {
       watcher.stopWatching();
     });
@@ -337,12 +333,10 @@ test(`watch()`, async (t) => {
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
-      setTimeout(() => {
-        fs.writeFileSync(
-          Path.join(projectDPath, "./file1.js"),
-          `export const FILE_1 = ${Date.now()};`
-        );
-      }, 0);
+      fs.writeFileSync(
+        Path.join(projectDPath, "./file1.js"),
+        `export const FILE_1 = ${Date.now()};`
+      );
     }).finally(() => {
       watcher.stopWatching();
     });
@@ -368,15 +362,13 @@ test(`watch()`, async (t) => {
             true
           );
           counter++;
-          setTimeout(() => {
-            fs.writeFileSync(
-              Path.join(
-                projectDPath,
-                "../../../node_modules/ts-node/dist/foo.js"
-              ),
-              ""
-            );
-          }, 0);
+          fs.writeFileSync(
+            Path.join(
+              projectDPath,
+              "../../../node_modules/ts-node/dist/foo.js"
+            ),
+            ""
+          );
         } else {
           // a change from ts-node/dist
           t.ok(res);
@@ -388,15 +380,15 @@ test(`watch()`, async (t) => {
           resolve(void 0);
         }
       });
-      setTimeout(() => {
-        fs.writeFileSync(
-          Path.join(projectDPath, "./to-watch1.js"),
-          "import * as ts from 'ts-node'"
-        );
-      }, 0);
+      fs.writeFileSync(
+        Path.join(projectDPath, "./to-watch1.js"),
+        "import * as ts from 'ts-node'"
+      );
     }).finally(() => {
       watcher.stopWatching();
-      fs.unlinkSync(Path.join(projectDPath, "../../../node_modules/ts-node/dist/foo.js"));
+      fs.unlinkSync(
+        Path.join(projectDPath, "../../../node_modules/ts-node/dist/foo.js")
+      );
     });
   });
 
@@ -411,9 +403,7 @@ test(`watch()`, async (t) => {
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
-      setTimeout(() => {
-        fs.unlinkSync(Path.join(projectDPath, "./to-watch1.js"));
-      }, 0);
+      fs.unlinkSync(Path.join(projectDPath, "./to-watch1.js"));
     }).finally(() => {
       watcher.stopWatching();
     });
