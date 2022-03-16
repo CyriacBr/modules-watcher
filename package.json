@@ -29,7 +29,9 @@
     "prepublishOnly": "napi prepublish -t npm",
     "version": "napi version",
     "run:bin": "cargo run --release --bin bin --features without-napi",
-    "test": "ts-node ./tests/modules-watcher.spec.ts | tap-spec"
+    "test:rust": "cargo test --lib",
+    "test:node": "ts-node ./tests/modules-watcher.spec.ts | tap-spec",
+    "test": "yarn test:rust && yarn test:node"
   },
   "dependencies": {}
 }
