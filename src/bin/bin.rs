@@ -2,12 +2,11 @@ use modules_watcher::entry::make_entries;
 use lazy_static::lazy_static;
 use std::path::PathBuf;
 
-#[macro_use]
 extern crate napi_derive;
 extern crate core;
 
 lazy_static! {
-    static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
+    static ref CWD: PathBuf = std::env::current_dir().unwrap();
     static ref PROJECT_A_PATH: PathBuf = CWD.join("tests").join("fixtures").join("project_a");
     static ref THREEJS_PATH: PathBuf = CWD.join("tests").join("fixtures").join("three_js");
   }

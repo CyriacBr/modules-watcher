@@ -149,8 +149,7 @@ impl WatcherInner {
         }
         None
       })
-      .filter(|x| x.is_some())
-      .map(|x| x.unwrap())
+      .flatten()
       .collect();
   }
 
@@ -324,12 +323,10 @@ impl WatcherInner {
     if let Some(old_value) = checksum_store.get(file_path) {
       if curr_checksum == *old_value {
         (curr_checksum, FileState::NotModified)
+      } else if *old_value == -1 {
+        (curr_checksum, FileState::Created)
       } else {
-        if *old_value == -1 {
-          (curr_checksum, FileState::Created)
-        } else {
-          (curr_checksum, FileState::Modified)
-        }
+        (curr_checksum, FileState::Modified)
       }
     } else {
       (curr_checksum, FileState::Created)
@@ -441,11 +438,14 @@ impl Watcher {
             watcher.watch(x, RecursiveMode::Recursive).unwrap();
           });
         }
-        let maybe_item = mutself.store.get(path_str).map_or(None, |x| Some(x.value().clone_item()));
         if !retrieve_entries {
           drop(mutself); // unlocl mutex so watcher can be used inside callback
           on_event_cb(None).unwrap();
-        } else if let Some(item) = maybe_item {
+          return;
+        }
+
+        let maybe_item = mutself.store.get(path_str).map(|x| x.value().clone_item());
+        if let Some(item) = maybe_item {
           println!("looking for entries of {:?}", item);
           let entries = item.get_entries(&mutself.store);
           let payload = entries
