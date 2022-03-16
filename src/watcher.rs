@@ -155,7 +155,7 @@ impl Watcher {
       .collect();
   }
 
-  fn remove_dep(&self, dep: &str) {
+  pub fn remove_dep(&self, dep: &str) {
     self.store.remove(dep);
     self.store.par_iter_mut().for_each(|mut x| {
       x.deps.retain(|d| d != dep);
@@ -163,7 +163,9 @@ impl Watcher {
   }
 
   fn make_file_deps(&self, file_path: &str) -> Vec<String> {
-    self.store.remove(file_path).unwrap();
+    if self.store.contains_key(file_path) {
+      self.store.remove(file_path).unwrap();
+    }
     let project_root = &self.setup_options.project_root;
     let path = PathBuf::from(file_path);
     let res = make_file_item(
@@ -340,6 +342,7 @@ impl Watcher {
   pub fn get_dirs_to_watch(&self) -> Vec<String> {
     let mut set = HashSet::new();
     set.insert(self.setup_options.project_root.clone());
+    // TODO: ignore nested folders when a parent foldr is already selected
     for ref_multi in &self.store {
       let parent = ref_multi.path.parent().unwrap();
       set.insert(parent.to_str().unwrap().to_string());
@@ -360,6 +363,7 @@ impl Watcher {
 
     let flag = self.stop_watch_flag.clone();
     let on_event_arced = Arc::new(on_event);
+    // TODO: ? after watching, update self.store from self_clone.store
     std::thread::spawn(move || {
       let (tx, rx) = channel();
       let mut watcher = watcher(tx, std::time::Duration::from_millis(200)).unwrap();
@@ -370,21 +374,36 @@ impl Watcher {
 
       let on_event_cb = on_event_arced.clone();
       let mut event_handler = |path: PathBuf, event: notify::DebouncedEvent| {
+        println!("event_handler called");
+        let path_str = path.to_str().unwrap();
+        let mut need_watch_refresh = false;
         match event {
           Event::Create(_) => {
+            self_clone.make_file_deps(path_str);
             self_clone.update_store();
+            self_clone.update_entries_from_store();
+            need_watch_refresh = true;
           }
           Event::Write(_) => {
-            if self_clone.store.contains_key(path.to_str().unwrap()) {
-              self_clone.make_file_deps(path.to_str().unwrap());
+            if self_clone.store.contains_key(path_str) {
+              self_clone.make_file_deps(path_str);
               self_clone.update_entries_from_store();
+              need_watch_refresh = true;
             }
           }
           _ => {}
         }
+        // If deps changed, we need to watch new dir paths from them
+        if need_watch_refresh {
+          println!("watch refreshed: {:?}", self_clone.get_dirs_to_watch());
+          self_clone.get_dirs_to_watch().iter().for_each(|x| {
+            watcher.watch(x, RecursiveMode::Recursive).unwrap();
+          });
+        }
         if !retrieve_entries {
           on_event_cb(None).unwrap();
-        } else if let Some(item) = self_clone.store.get(path.to_str().unwrap()) {
+        } else if let Some(item) = self_clone.store.get(path_str) {
+          println!("looking for entries of {:?}", item.value());
           let entries = item.get_entries(&self_clone.store);
           on_event_cb(Some(
             entries
@@ -406,7 +425,7 @@ impl Watcher {
         }
         match rx.try_recv() {
           Ok(event) => {
-            // println!("event: {:?}", event);
+            println!("event: {:?}", event);
             match &event {
               Event::Write(path) => {
                 event_handler(path.to_path_buf(), event);
