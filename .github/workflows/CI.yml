@@ -173,9 +173,13 @@ jobs:
       - name: List packages
         run: ls -R .
         shell: bash
-      - uses: actions-rs/toolchain@v1
+      - name: Install cargo
+        uses: actions-rs/toolchain@v1
         with:
+          profile: minimal
+          override: true
           toolchain: stable
+          target: x86_64-unknown-linux-gnu
       - name: Test bindings
         run: docker run --rm -v $(pwd):/build -w /build node:${{ matrix.node }}-slim yarn test 
   publish:
