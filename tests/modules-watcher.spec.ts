@@ -6,6 +6,7 @@ import * as fs from "fs";
 const projectBPath = Path.join(__dirname, "./fixtures/project_b");
 const projectCPath = Path.join(__dirname, "./fixtures/project_c");
 const projectDPath = Path.join(__dirname, "./fixtures/project_d");
+const projectEPath = Path.join(__dirname, "./fixtures/project_e");
 
 test(`deps resolving`, async (t) => {
   let watcher = ModulesWatcher.setup({
@@ -78,6 +79,27 @@ test(`deps resolving`, async (t) => {
       t.is(deps.includes(Path.join(projectBPath, "file11.css")), true);
       t.is(deps.includes(Path.join(projectBPath, "file12.scss")), true);
     });
+  });
+});
+
+test(`setup options`, async t => {
+  t.test(`supportedPaths work`, async t => {
+    let watcher = ModulesWatcher.setup({
+      project: "e",
+      projectRoot: projectEPath,
+      globEntries: ["**/to-watch*"],
+      supportedPaths: {
+        cjs: [],
+        esm: ['lol']
+      }
+    });
+
+    const entries = watcher.getEntries();
+
+    const entry1 = entries.find(v => v.path.endsWith("to-watch1.js"))!;
+    const entry2 = entries.find(v => v.path.endsWith("to-watch2.lol"))!;
+    t.is(entry1.deps.length, 0);
+    t.is(entry2.deps.length, 1);
   });
 });
 

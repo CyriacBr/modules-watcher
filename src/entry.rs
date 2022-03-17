@@ -157,31 +157,33 @@ pub fn make_file_item<'a>(
         css: None,
       },
     };
-    let js_exts: Vec<String> = vec!["cjs", "esm", "js", "ts", "tsx", "jsx", "tjs", "tsm"]
-      .iter()
-      .map(|x| x.to_string())
-      .collect();
-    let style_exts: Vec<String> = vec!["css", "scss", "sass"]
-      .iter()
-      .map(|x| x.to_string())
-      .collect();
+    let js_exts: Vec<&str> = vec!["cjs", "esm", "js", "ts", "tsx", "jsx", "cts", "mts"];
+    let style_exts: Vec<&str> = vec!["css", "scss", "sass"];
     if value.esm.is_none() {
       value.esm = Some(
         js_exts
           .clone()
           .into_iter()
-          .chain([String::from("mdx")].into_iter())
+          .chain(["mdx"].into_iter())
+          .map(String::from)
           .collect(),
       );
     }
     if value.dyn_esm.is_none() {
-      value.dyn_esm = Some(js_exts.clone());
+      value.dyn_esm = Some(js_exts.clone().into_iter().map(String::from).collect());
     }
     if value.cjs.is_none() {
-      value.cjs = Some(js_exts);
+      value.cjs = Some(js_exts.into_iter().map(String::from).collect());
     }
     if value.css.is_none() {
-      value.css = Some(style_exts);
+      value.css = Some(
+        style_exts
+          .clone()
+          .into_iter()
+          .chain(["mdx"].into_iter())
+          .map(String::from)
+          .collect(),
+      );
     }
     value
   };
