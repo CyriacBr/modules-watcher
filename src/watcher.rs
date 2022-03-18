@@ -28,6 +28,7 @@ pub struct SetupOptions {
   pub entries: Option<Vec<String>>,
   pub cache_dir: Option<String>,
   pub supported_paths: Option<SupportedPaths>,
+  // pub debug: Option<bool>
 }
 
 #[napi(object)]

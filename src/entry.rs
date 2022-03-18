@@ -10,7 +10,7 @@ use std::path::{Component, Path, PathBuf};
 #[path = "./path_clean.rs"]
 mod path_clean;
 
-use crate::parser::{parse_deps, ParseConditions};
+use crate::parser::{parse_deps, ImportDep, ParseConditions};
 use path_clean::*;
 
 #[derive(Debug)]
@@ -218,7 +218,10 @@ pub fn make_file_item<'a>(
     .unwrap_or_else(|_| panic!("Couldn't read file {} ", file_path.to_str().unwrap()));
 
   let imports = parse_deps(&content, parse_conditions);
-  for source in imports {
+  for source_imp in imports {
+    let source = match &source_imp {
+      ImportDep::ESM(path) | ImportDep::REQUIRE(path) | ImportDep::CSS(path) => path.clone(),
+    };
     let maybe_path_buf = if source.starts_with("./") || source.starts_with("../") {
       let dir = file_path.parent().unwrap();
       Some(dir.join(source).clean())
@@ -228,7 +231,7 @@ pub fn make_file_item<'a>(
     } else {
       let node_modules_path = find_node_modules_dir(project_path.to_path_buf())
         .expect("Couldn't find node_modules folder");
-      resolve_node_module(&source, node_modules_path.as_path())
+      resolve_node_module(&source, &source_imp, node_modules_path.as_path())
     };
     let mut path_buf = maybe_path_buf?;
     // If the imported file is a directory, we need to resolve it's index file
@@ -334,7 +337,7 @@ pub fn find_node_modules_dir(root: PathBuf) -> Option<PathBuf> {
   work_fn()
 }
 
-fn resolve_node_module(module: &str, node_modules: &Path) -> Option<PathBuf> {
+fn resolve_node_module(module: &str, import: &ImportDep, node_modules: &Path) -> Option<PathBuf> {
   let mut module_path = PathBuf::new();
   let components = Path::new(module).components();
   let components_count = components.count();
@@ -364,13 +367,34 @@ fn resolve_node_module(module: &str, node_modules: &Path) -> Option<PathBuf> {
     // If we have "exports": {}
     if json["exports"].is_object() {
       // TODO: handle .   =>  [{default: './index.js'}, './index.js'] (see tape)
+      // TODO: handle .   =>  { node: '', require: '', default: '' }
       // transforms module to a relative path
       // foo     => .
       // foo/bar => ./bar
       let relative = module.replacen(module_path.to_str().unwrap(), ".", 1);
       for (key, value) in json["exports"].as_object().unwrap().into_iter() {
         if key.eq(&relative) {
-          return Some(pkg_dir.join(value.as_str().unwrap()).clean());
+          // ".": "./index.js"
+          if value.is_string() {
+            return Some(pkg_dir.join(value.as_str().unwrap()).clean());
+          }
+          // ".": { import: "./foo.js", default: "./bar.js" }
+          else if value.is_object() {
+            let mapping = value.as_object().unwrap();
+            let first_match = mapping
+              .get(mapping.keys().into_iter().next().unwrap())
+              .unwrap();
+            for (type_, value) in mapping.into_iter() {
+              if (type_ == "import" && matches!(import, ImportDep::ESM(_)))
+                || (type_ == "require" && matches!(import, ImportDep::REQUIRE(_)))
+                || (type_ == "default")
+              {
+                return Some(pkg_dir.join(value.as_str().unwrap()).clean());
+              }
+            }
+            // normally, this should crash like node's `require.resolve` but I don't want this
+            return Some(pkg_dir.join(first_match.as_str().unwrap()).clean());
+          }
         }
       }
     }
@@ -390,7 +414,10 @@ fn resolve_node_module(module: &str, node_modules: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-  use crate::entry::{make_entries, make_file_item, resolve_with_extension};
+  use crate::{
+    entry::{make_entries, make_file_item, resolve_with_extension},
+    parser::ImportDep,
+  };
   use dashmap::DashMap;
   use lazy_static::lazy_static;
   use std::path::PathBuf;
@@ -644,32 +671,103 @@ mod tests {
   fn test_resolve_node_modules() {
     let node_modules = CWD.join("tests/fixtures/fake_node_modules");
     {
-      let result = resolve_node_module("exports_str", node_modules.as_path()).unwrap();
+      let result = resolve_node_module(
+        "exports_str",
+        &ImportDep::ESM("exports_str".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
       assert_eq!(result, node_modules.join("exports_str/main.js"));
     }
     {
-      let result = resolve_node_module("exports_obj", node_modules.as_path()).unwrap();
+      let result = resolve_node_module(
+        "exports_obj",
+        &ImportDep::ESM("exports_obj".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
       assert_eq!(result, node_modules.join("exports_obj/main.js"));
     }
     {
-      let result = resolve_node_module("exports_obj/a", node_modules.as_path()).unwrap();
+      let result = resolve_node_module(
+        "exports_obj/a",
+        &ImportDep::ESM("exports_obj/a".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
       assert_eq!(result, node_modules.join("exports_obj/a.js"));
     }
     {
-      let result = resolve_node_module("main", node_modules.as_path()).unwrap();
+      let result = resolve_node_module(
+        "main",
+        &ImportDep::ESM("main".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
       assert_eq!(result, node_modules.join("main/main.js"));
     }
     {
-      let result = resolve_node_module("nested/b", node_modules.as_path()).unwrap();
+      let result = resolve_node_module(
+        "nested/b",
+        &ImportDep::ESM("nested/b".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
       assert_eq!(result, node_modules.join("nested/b.js"));
     }
     {
-      let result = resolve_node_module("nested", node_modules.as_path()).unwrap();
+      let result = resolve_node_module(
+        "nested",
+        &ImportDep::ESM("nested".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
       assert_eq!(result, node_modules.join("nested/a.js"));
     }
     {
-      let result = resolve_node_module("nested/c", node_modules.as_path()).unwrap();
+      let result = resolve_node_module(
+        "nested/c",
+        &ImportDep::ESM("nested/c".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
       assert_eq!(result, node_modules.join("nested/c.js"));
+    }
+    {
+      let result = resolve_node_module(
+        "exports_cond",
+        &ImportDep::ESM("exports_cond".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
+      assert_eq!(result, node_modules.join("exports_cond/import-main.js"));
+    }
+    {
+      let result = resolve_node_module(
+        "exports_cond",
+        &ImportDep::REQUIRE("exports_cond".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
+      assert_eq!(result, node_modules.join("exports_cond/require-main.js"));
+    }
+    {
+      let result = resolve_node_module(
+        "exports_cond_default",
+        &ImportDep::REQUIRE("exports_cond_default".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
+      assert_eq!(result, node_modules.join("exports_cond_default/main.js"));
+    }
+    {
+      let result = resolve_node_module(
+        "exports_cond_no_default",
+        &ImportDep::REQUIRE("exports_cond_no_default".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
+      assert_eq!(result, node_modules.join("exports_cond_no_default/import-main.js"));
     }
   }
 
