@@ -28,7 +28,7 @@ pub struct SetupOptions {
   pub entries: Option<Vec<String>>,
   pub cache_dir: Option<String>,
   pub supported_paths: Option<SupportedPaths>,
-  // pub debug: Option<bool>
+  pub debug: Option<bool>
 }
 
 #[napi(object)]
@@ -55,6 +55,7 @@ pub struct WatcherInner {
   pub processed: bool,
   pub cache_dir: String,
   make_entries_opts: Option<MakeEntriesOptions>,
+  debug: bool
 }
 
 #[napi(js_name = "ModulesWatcher")]
@@ -76,6 +77,7 @@ impl WatcherInner {
       processed: self.processed,
       cache_dir: self.cache_dir.clone(),
       make_entries_opts: self.make_entries_opts.clone(),
+      debug: self.debug
     }
   }
 
@@ -90,6 +92,7 @@ impl WatcherInner {
         .unwrap()
         .to_string()
     });
+    let debug = watcher_opts.debug.unwrap_or(false);
 
     let globs_vec = opts.glob_entries.unwrap_or_default();
     let entry_paths: Vec<PathBuf> = entries_vec.iter().map(PathBuf::from).collect();
@@ -112,6 +115,7 @@ impl WatcherInner {
       processed: true,
       cache_dir,
       make_entries_opts,
+      debug
     }
   }
 
@@ -413,7 +417,6 @@ impl Watcher {
       let on_event_cb = on_event_arced.clone();
       let mut event_handler = |path: PathBuf, event: notify::DebouncedEvent| {
         let mut mutself = inner.lock().unwrap();
-        println!("event_handler called");
         let path_str = path.to_str().unwrap();
         let mut need_watch_refresh = false;
         match event {
@@ -427,19 +430,27 @@ impl Watcher {
           }
           Event::Write(_) => {
             if mutself.store.contains_key(path_str) {
+              let duration = std::time::Instant::now();
               mutself.make_file_deps(path_str);
               mutself.update_entries_from_store();
               need_watch_refresh = true;
+              if mutself.debug {
+                println!("[Watcher::watch] write handling ({}ms)", duration.elapsed().as_millis());
+              }
             }
           }
           _ => {}
         }
         // If deps changed, we need to watch new dir paths from them
         if need_watch_refresh {
-          println!("watch refreshed: {:?}", mutself.get_dirs_to_watch());
+          let duration = std::time::Instant::now();
           mutself.get_dirs_to_watch().iter().for_each(|x| {
+            // watcher.unwatch(x).ok();
             watcher.watch(x, RecursiveMode::Recursive).unwrap();
           });
+          if mutself.debug {
+            println!("[Watcher::watch] watch refreshed ({}ms)", duration.elapsed().as_millis());
+          }
         }
         if !retrieve_entries {
           drop(mutself); // unlocl mutex so watcher can be used inside callback
@@ -449,7 +460,9 @@ impl Watcher {
 
         let maybe_item = mutself.store.get(path_str).map(|x| x.value().clone_item());
         if let Some(item) = maybe_item {
-          println!("looking for entries of {:?}", item);
+          if mutself.debug {
+            println!("[Watcher::watch] looking for entries of {:?}", item);
+          }
           let entries = item.get_entries(&mutself.store);
           let payload = entries
             .iter()
@@ -472,7 +485,11 @@ impl Watcher {
         }
         match rx.try_recv() {
           Ok(event) => {
-            println!("event: {:?}", event);
+            let mutself = inner.lock().unwrap();
+            if mutself.debug {
+              println!("[ModulesWatcher::watch] event: {:?}", event);
+            }
+            drop(mutself);
             match &event {
               Event::Write(path) => {
                 event_handler(path.to_path_buf(), event);
@@ -574,6 +591,7 @@ mod tests {
       entries: Some(vec![path_1, path_2]),
       cache_dir: None,
       supported_paths: None,
+      debug: None
     });
     assert_eq!(watcher.processed(), true);
   }
@@ -587,6 +605,7 @@ mod tests {
       entries: None,
       cache_dir: None,
       supported_paths: None,
+      debug: None
     });
 
     let duration = std::time::Instant::now();
@@ -610,6 +629,7 @@ mod tests {
       entries: Some(vec![path_1.clone(), path_2.clone()]),
       cache_dir: None,
       supported_paths: None,
+      debug: None
     });
 
     // First call, we expect to detect two changes of type added
@@ -681,6 +701,7 @@ mod tests {
       entries: Some(vec![path_1]),
       cache_dir: None,
       supported_paths: None,
+      debug: None
     });
     assert_eq!(watcher.processed(), true);
 

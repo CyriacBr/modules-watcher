@@ -44,6 +44,7 @@ fn bench_make_changes(c: &mut Criterion) {
     entries: None,
     cache_dir: None,
     supported_paths: None,
+    debug: None
   });
   let mut group = c.benchmark_group("make_changes");
   group.bench_function("three_js", |b| {
