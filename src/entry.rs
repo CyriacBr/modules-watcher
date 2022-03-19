@@ -343,6 +343,40 @@ fn resolve_node_module(module: &str, import: &ImportDep, node_modules: &Path) ->
   let components_count = components.count();
   let root = Path::new(module).components().next().unwrap().as_os_str();
   let root_pkg_dir = node_modules.join(root);
+
+  fn handle_export_value<'a>(
+    value: &'a serde_json::Value,
+    import: &'a ImportDep,
+  ) -> Option<&'a str> {
+    if value.is_string() {
+      return Some(value.as_str().unwrap());
+    } else if value.is_array() {
+      for value in value.as_array().unwrap().into_iter() {
+        if let Some(res) = handle_export_value(value, import) {
+          return Some(res);
+        }
+      }
+    }
+    // ".": { import: "./foo.js", default: "./bar.js" }
+    else if value.is_object() {
+      let mapping = value.as_object().unwrap();
+      let first_match = mapping
+        .get(mapping.keys().into_iter().next().unwrap())
+        .unwrap();
+      for (type_, value) in mapping.into_iter() {
+        if (type_ == "import" && matches!(import, ImportDep::ESM(_)))
+          || (type_ == "require" && matches!(import, ImportDep::REQUIRE(_)))
+          || (type_ == "default")
+        {
+          return Some(value.as_str().unwrap());
+        }
+      }
+      // normally, this should crash like node's `require.resolve` but I don't want this
+      return Some(first_match.as_str().unwrap());
+    }
+    return None;
+  }
+
   for (i, comp) in Path::new(module).components().into_iter().enumerate() {
     if comp == Component::RootDir {
       continue;
@@ -359,42 +393,34 @@ fn resolve_node_module(module: &str, import: &ImportDep, node_modules: &Path) ->
     let json_content = std::fs::read(pkg_path).unwrap();
     let json: serde_json::Value = serde_json::from_slice(&json_content).unwrap();
 
+    let exports = &json["exports"];
+
     // If we have "exports": "./foo.js"
-    if json["exports"].is_string() {
-      return Some(pkg_dir.join(json["exports"].as_str().unwrap()).clean());
+    if exports.is_string() {
+      return Some(pkg_dir.join(exports.as_str().unwrap()).clean());
+    }
+
+    // If we have "exports": ["./foo.js", "./bar.js"]
+    if exports.is_array() {
+      for value in exports.as_array().unwrap().into_iter() {
+        if let Some(res) = handle_export_value(value, import) {
+          return Some(pkg_dir.join(res).clean());
+        }
+      }
     }
 
     // If we have "exports": {}
-    if json["exports"].is_object() {
-      // TODO: handle .   =>  [{default: './index.js'}, './index.js'] (see tape)
-      // TODO: handle .   =>  { node: '', require: '', default: '' }
+    if exports.is_object() {
       // transforms module to a relative path
       // foo     => .
       // foo/bar => ./bar
       let relative = module.replacen(module_path.to_str().unwrap(), ".", 1);
-      for (key, value) in json["exports"].as_object().unwrap().into_iter() {
+      for (key, value) in exports.as_object().unwrap().into_iter() {
         if key.eq(&relative) {
-          // ".": "./index.js"
-          if value.is_string() {
-            return Some(pkg_dir.join(value.as_str().unwrap()).clean());
+          if let Some(res) = handle_export_value(value, import) {
+            return Some(pkg_dir.join(res).clean());
           }
-          // ".": { import: "./foo.js", default: "./bar.js" }
-          else if value.is_object() {
-            let mapping = value.as_object().unwrap();
-            let first_match = mapping
-              .get(mapping.keys().into_iter().next().unwrap())
-              .unwrap();
-            for (type_, value) in mapping.into_iter() {
-              if (type_ == "import" && matches!(import, ImportDep::ESM(_)))
-                || (type_ == "require" && matches!(import, ImportDep::REQUIRE(_)))
-                || (type_ == "default")
-              {
-                return Some(pkg_dir.join(value.as_str().unwrap()).clean());
-              }
-            }
-            // normally, this should crash like node's `require.resolve` but I don't want this
-            return Some(pkg_dir.join(first_match.as_str().unwrap()).clean());
-          }
+          panic!("failed to handle exports field for module {}", module);
         }
       }
     }
@@ -767,7 +793,34 @@ mod tests {
         node_modules.as_path(),
       )
       .unwrap();
-      assert_eq!(result, node_modules.join("exports_cond_no_default/import-main.js"));
+      assert_eq!(
+        result,
+        node_modules.join("exports_cond_no_default/import-main.js")
+      );
+    }
+    {
+      let result = resolve_node_module(
+        "exports_array",
+        &ImportDep::ESM("exports_array".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
+      assert_eq!(
+        result,
+        node_modules.join("exports_array/main1.js")
+      );
+    }
+    {
+      let result = resolve_node_module(
+        "exports_obj_array",
+        &ImportDep::ESM("exports_obj_array".to_string()),
+        node_modules.as_path(),
+      )
+      .unwrap();
+      assert_eq!(
+        result,
+        node_modules.join("exports_obj_array/import-main.js")
+      );
     }
   }
 
