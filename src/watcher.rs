@@ -420,7 +420,7 @@ impl Watcher {
         let path_str = path.to_str().unwrap();
         let mut need_watch_refresh = false;
         match event {
-          Event::Create(_) => {
+          Event::Create(_) | Event::Rename(_,_) => {
             if path.as_path().is_file() {
               mutself.make_file_deps(path_str);
               mutself.update_store();
@@ -491,14 +491,14 @@ impl Watcher {
             }
             drop(mutself);
             match &event {
-              Event::Write(path) => {
+              Event::Write(path) | Event::Create(path) | Event::Remove(path) => {
                 event_handler(path.to_path_buf(), event);
               }
-              Event::Create(path) => {
-                event_handler(path.to_path_buf(), event);
-              }
-              Event::Remove(path) => {
-                event_handler(path.to_path_buf(), event);
+              Event::Rename(before, after) => {
+                let mutself = inner.lock().unwrap();
+                mutself.remove_dep(before.to_str().unwrap());
+                drop(mutself);
+                event_handler(after.to_path_buf(), event);
               }
               _ => {}
             }
