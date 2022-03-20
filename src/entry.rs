@@ -33,23 +33,24 @@ impl FileItem {
     }
   }
 
-  pub fn get_entries(&self, store: &DashMap<String, FileItem>) -> Vec<String> {
+  pub fn get_usage(&self, store: &DashMap<String, FileItem>) -> Vec<String> {
+    let self_path = self.path.to_str().unwrap().to_string();
     let res: Vec<String> = store
       .iter()
       .filter(|item| {
+        if item.path.to_str().unwrap() == self_path {
+          return true;
+        }
         for dep in &item.deps {
-          if dep.eq(&self.path.to_str().unwrap().to_string()) {
+          if dep.eq(&self_path) {
             return true;
           }
         }
         false
       })
-      .map(|item| item.path.to_str().unwrap().to_string())
+      .map(|item| item.value().path.to_str().unwrap().to_string())
       .collect();
 
-    if res.is_empty() {
-      return vec![self.path.to_str().unwrap().to_string()];
-    }
     res
   }
 
@@ -60,6 +61,7 @@ impl FileItem {
     }
   }
 }
+
 
 #[derive(Clone)]
 pub struct MakeEntriesOptions {
@@ -113,13 +115,10 @@ pub fn make_missing_entries(
   paths.par_iter().for_each(|p| {
     make_file_item(p, &project_path, store, opts);
   });
-  let entry_path_str_list: Vec<String> = paths
+
+  let entries = paths
     .iter()
-    .map(|x| x.to_str().unwrap().to_string())
-    .collect();
-  let entries = entry_path_str_list
-    .iter()
-    .map(|x| store.get(x).unwrap().clone_item())
+    .map(|x| store.get(x.to_str().unwrap()).unwrap().clone_item())
     .collect();
   entries
 }

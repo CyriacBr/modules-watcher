@@ -26,6 +26,7 @@ export interface SetupOptions {
   entries?: Array<string> | undefined | null
   cacheDir?: string | undefined | null
   supportedPaths?: SupportedPaths | undefined | null
+  debug?: boolean | undefined | null
 }
 export interface EntryChange {
   changeType: string
@@ -40,5 +41,5 @@ export class ModulesWatcher {
   makeChanges(): Array<EntryChange>
   getDirsToWatch(): Array<string>
   stopWatching(): void
-  watch(retrieveItem: boolean, callback: (err: null | Error, result: null | NapiFileItem[]) => void): void
+  watch(retrieve_entries: boolean, callback: (err: null | Error, result: null | NapiFileItem[]) => void): void
 }

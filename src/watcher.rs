@@ -123,6 +123,12 @@ impl WatcherInner {
     self.entries.iter().map(|x| x.to_napi()).collect()
   }
 
+  pub fn get_entries_from_item(&self, item: &FileItem) -> Vec<&FileItem> {
+    let usage = item.get_usage(&self.store);
+    let mut usage = usage.iter();
+    self.entries.iter().filter(|x| usage.any(|y| y == x.path.to_str().unwrap())).collect()
+  }
+
   fn update_store(&mut self) {
     let opts = &self.setup_options;
     let entries_vec = opts.entries.clone().unwrap_or_default();
@@ -463,10 +469,10 @@ impl Watcher {
           if mutself.debug {
             println!("[Watcher::watch] looking for entries of {:?}", item);
           }
-          let entries = item.get_entries(&mutself.store);
+          let entries = mutself.get_entries_from_item(&item);
           let payload = entries
-            .iter()
-            .map(|x| mutself.store.get(x).unwrap().clone_item())
+            .into_iter()
+            .map(|x| x.clone_item())
             .collect();
           drop(mutself); // unlocl mutex so watcher can be used inside callback
           on_event_cb(Some(payload)).unwrap();
@@ -520,9 +526,9 @@ impl Watcher {
 
   #[napi(
     js_name = "watch",
-    ts_args_type = "retrieveItem: boolean, callback: (err: null | Error, result: null | NapiFileItem[]) => void"
+    ts_args_type = "retrieve_entries: boolean, callback: (err: null | Error, result: null | NapiFileItem[]) => void"
   )]
-  pub fn napi_watch(&mut self, retrieve_item: bool, callback: napi::JsFunction) {
+  pub fn napi_watch(&mut self, retrieve_entries: bool, callback: napi::JsFunction) {
     let tsfn: ThreadsafeFunction<Option<Vec<NapiFileItem>>, ErrorStrategy::CalleeHandled> =
       callback
         .create_threadsafe_function(
@@ -547,7 +553,7 @@ impl Watcher {
         )
         .unwrap();
 
-    self.watch(retrieve_item, move |item| {
+    self.watch(retrieve_entries, move |item| {
       if let Some(items) = item {
         tsfn.call(
           Ok(Some(items.iter().map(|item| item.to_napi()).collect())),
