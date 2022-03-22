@@ -13,6 +13,7 @@
     "@types/node": "^17.0.21",
     "@types/tape": "^4.13.2",
     "fast-glob": "^3.2.11",
+    "kleur": "^4.1.4",
     "tap-spec": "^5.0.0",
     "tape": "^5.5.2",
     "ts-node": "^10.7.0",
@@ -31,7 +32,8 @@
     "run:bin": "cargo run --release --bin bin --features without-napi",
     "test:rust": "cargo test --lib",
     "test:node": "ts-node ./tests/modules-watcher.spec.ts | tap-spec",
-    "test": "yarn test:rust && yarn test:node"
+    "test": "yarn test:rust && yarn test:node",
+    "bench": "cargo bench --features without-napi"
   },
   "dependencies": {}
 }
