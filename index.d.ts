@@ -9,7 +9,7 @@ export class ExternalObject<T> {
     [K: symbol]: T
   }
 }
-export interface NapiFileItem {
+export interface FileItem {
   path: string
   deps: Array<string>
 }
@@ -33,13 +33,18 @@ export interface EntryChange {
   entry: string
   tree?: Array<string> | undefined | null
 }
+export interface WatchInfo {
+  event: string
+  affectedFile: string
+  affectedEntries?: Array<FileItem> | undefined | null
+}
 export type Watcher = ModulesWatcher
 export class ModulesWatcher {
   static setup(opts: SetupOptions): Watcher
   cacheDir(): string
-  getEntries(): Array<NapiFileItem>
+  getEntries(): Array<FileItem>
   makeChanges(): Array<EntryChange>
   getDirsToWatch(): Array<string>
   stopWatching(): void
-  watch(retrieve_entries: boolean, callback: (err: null | Error, result: null | NapiFileItem[]) => void): void
+  watch(retrieve_entries: boolean, callback: (err: null | Error, result: null | WatchInfo) => void): void
 }

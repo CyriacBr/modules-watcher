@@ -28,7 +28,7 @@ pub struct SetupOptions {
   pub entries: Option<Vec<String>>,
   pub cache_dir: Option<String>,
   pub supported_paths: Option<SupportedPaths>,
-  pub debug: Option<bool>
+  pub debug: Option<bool>,
 }
 
 #[napi(object)]
@@ -38,6 +38,38 @@ pub struct EntryChange {
   pub change_type: String,
   pub entry: String,
   pub tree: Option<Vec<String>>,
+}
+
+pub struct WatchInfo {
+  pub event: notify::DebouncedEvent,
+  pub affected_file: String,
+  pub affected_entries: Option<Vec<FileItem>>,
+}
+
+impl WatchInfo {
+  pub fn to_napi(&self) -> NapiWatchInfo {
+    NapiWatchInfo {
+      event: match self.event {
+        Event::Create(_) => String::from("created"),
+        Event::Remove(_) => String::from("deleted"),
+        Event::Write(_) => String::from("modified"),
+        Event::Rename(_, _) => String::from("renamed"),
+        _ => String::new(),
+      },
+      affected_file: self.affected_file.clone(),
+      affected_entries: self
+        .affected_entries
+        .as_ref()
+        .map(|vec| vec.into_iter().map(|x| x.to_napi()).collect()),
+    }
+  }
+}
+
+#[napi(object, js_name = "WatchInfo")]
+pub struct NapiWatchInfo {
+  pub event: String,
+  pub affected_file: String,
+  pub affected_entries: Option<Vec<NapiFileItem>>,
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -55,7 +87,7 @@ pub struct WatcherInner {
   pub processed: bool,
   pub cache_dir: String,
   make_entries_opts: Option<MakeEntriesOptions>,
-  debug: bool
+  debug: bool,
 }
 
 #[napi(js_name = "ModulesWatcher")]
@@ -77,7 +109,7 @@ impl WatcherInner {
       processed: self.processed,
       cache_dir: self.cache_dir.clone(),
       make_entries_opts: self.make_entries_opts.clone(),
-      debug: self.debug
+      debug: self.debug,
     }
   }
 
@@ -115,7 +147,7 @@ impl WatcherInner {
       processed: true,
       cache_dir,
       make_entries_opts,
-      debug
+      debug,
     }
   }
 
@@ -125,8 +157,12 @@ impl WatcherInner {
 
   pub fn get_entries_from_item(&self, item: &FileItem) -> Vec<&FileItem> {
     let usage = item.get_usage(&self.store);
-    let mut usage = usage.iter();
-    self.entries.iter().filter(|x| usage.any(|y| y == x.path.to_str().unwrap())).collect()
+    let usage = usage.iter();
+    self
+      .entries
+      .iter()
+      .filter(|x| usage.clone().any(|y| y == x.path.to_str().unwrap()))
+      .collect()
   }
 
   fn update_store(&mut self) {
@@ -397,8 +433,7 @@ impl Watcher {
 
   pub fn watch<F>(&mut self, retrieve_entries: bool, on_event: F)
   where
-    F:
-      Fn(Option<Vec<FileItem>>) -> Result<(), ()> + std::marker::Sync + std::marker::Send + 'static,
+    F: Fn(WatchInfo) -> Result<(), ()> + std::marker::Sync + std::marker::Send + 'static,
   {
     use notify::{watcher, RecursiveMode, Watcher};
     use std::sync::mpsc::channel;
@@ -426,7 +461,7 @@ impl Watcher {
         let path_str = path.to_str().unwrap();
         let mut need_watch_refresh = false;
         match event {
-          Event::Create(_) | Event::Rename(_,_) => {
+          Event::Create(_) | Event::Rename(_, _) => {
             if path.as_path().is_file() {
               mutself.make_file_deps(path_str);
               mutself.update_store();
@@ -441,7 +476,10 @@ impl Watcher {
               mutself.update_entries_from_store();
               need_watch_refresh = true;
               if mutself.debug {
-                println!("[Watcher::watch] write handling ({}ms)", duration.elapsed().as_millis());
+                println!(
+                  "[Watcher::watch] write handling ({}ms)",
+                  duration.elapsed().as_millis()
+                );
               }
             }
           }
@@ -455,28 +493,34 @@ impl Watcher {
             watcher.watch(x, RecursiveMode::Recursive).unwrap();
           });
           if mutself.debug {
-            println!("[Watcher::watch] watch refreshed ({}ms)", duration.elapsed().as_millis());
+            println!(
+              "[Watcher::watch] watch refreshed ({}ms)",
+              duration.elapsed().as_millis()
+            );
           }
-        }
-        if !retrieve_entries {
-          drop(mutself); // unlocl mutex so watcher can be used inside callback
-          on_event_cb(None).unwrap();
-          return;
         }
 
-        let maybe_item = mutself.store.get(path_str).map(|x| x.value().clone_item());
-        if let Some(item) = maybe_item {
-          if mutself.debug {
-            println!("[Watcher::watch] looking for entries of {:?}", item);
-          }
-          let entries = mutself.get_entries_from_item(&item);
-          let payload = entries
-            .into_iter()
-            .map(|x| x.clone_item())
-            .collect();
-          drop(mutself); // unlocl mutex so watcher can be used inside callback
-          on_event_cb(Some(payload)).unwrap();
-        }
+        let info = WatchInfo {
+          event,
+          affected_file: String::from(path_str),
+          affected_entries: if !retrieve_entries {
+            None
+          } else {
+            let maybe_item = mutself.store.get(path_str).map(|x| x.value().clone_item());
+            if let Some(item) = maybe_item {
+              if mutself.debug {
+                println!("[Watcher::watch] looking for entries of {:?}", item);
+              }
+              let entries = mutself.get_entries_from_item(&item);
+              Some(entries.into_iter().map(|x| x.clone_item()).collect())
+            } else {
+              None
+            }
+          },
+        };
+
+        drop(mutself); // unlocl mutex so watcher can be used inside callback
+        on_event_cb(info).unwrap();
       };
 
       // notify that watching started
@@ -526,42 +570,44 @@ impl Watcher {
 
   #[napi(
     js_name = "watch",
-    ts_args_type = "retrieve_entries: boolean, callback: (err: null | Error, result: null | NapiFileItem[]) => void"
+    ts_args_type = "retrieve_entries: boolean, callback: (err: null | Error, result: null | WatchInfo) => void"
   )]
   pub fn napi_watch(&mut self, retrieve_entries: bool, callback: napi::JsFunction) {
-    let tsfn: ThreadsafeFunction<Option<Vec<NapiFileItem>>, ErrorStrategy::CalleeHandled> =
-      callback
-        .create_threadsafe_function(
-          0,
-          |ctx: ThreadSafeCallContext<Option<Vec<NapiFileItem>>>| {
-            if let Some(items) = ctx.value {
-              let mut result = ctx.env.create_array(items.len() as u32).unwrap();
-              for (i, item) in items.iter().enumerate() {
-                let mut obj = ctx.env.create_object().unwrap();
-                let mut deps_array = ctx.env.create_array(item.deps.len() as u32).unwrap();
-                for (j, dep) in item.deps.iter().enumerate() {
-                  deps_array.set(j as u32, dep.clone()).unwrap();
-                }
-                obj.set("path", item.path.clone()).unwrap();
-                obj.set("deps", deps_array.coerce_to_object()).unwrap();
-                result.set(i as u32, obj).unwrap();
-              }
-              return Ok(vec![result.coerce_to_object().unwrap()]);
+    let tsfn: ThreadsafeFunction<WatchInfo, ErrorStrategy::CalleeHandled> = callback
+      .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<WatchInfo>| {
+        let info = ctx.value.to_napi();
+
+        let mut obj = ctx.env.create_object().unwrap();
+        obj.set("event", info.event).unwrap();
+        obj.set("affectedFile", info.affected_file).unwrap();
+
+        if let Some(entries) = info.affected_entries {
+          let mut entries_arr = ctx.env.create_array(entries.len() as u32).unwrap();
+          for (i, entry) in entries.iter().enumerate() {
+            let mut entry_obj = ctx.env.create_object().unwrap();
+            let mut deps_array = ctx.env.create_array(entry.deps.len() as u32).unwrap();
+            for (j, dep) in entry.deps.iter().enumerate() {
+              deps_array.set(j as u32, dep.clone()).unwrap();
             }
-            Ok(vec![])
-          },
-        )
-        .unwrap();
+            entry_obj.set("path", entry.path.clone()).unwrap();
+            entry_obj
+              .set("deps", deps_array.coerce_to_object())
+              .unwrap();
+            entries_arr.set(i as u32, entry_obj).unwrap();
+          }
+          obj.set("affectedEntries", entries_arr).unwrap();
+        } else {
+          obj
+            .set("affectedEntries", ctx.env.create_array(0u32).unwrap())
+            .unwrap();
+        }
+
+        return Ok(vec![obj]);
+      })
+      .unwrap();
 
     self.watch(retrieve_entries, move |item| {
-      if let Some(items) = item {
-        tsfn.call(
-          Ok(Some(items.iter().map(|item| item.to_napi()).collect())),
-          ThreadsafeFunctionCallMode::Blocking,
-        );
-      } else {
-        tsfn.call(Ok(None), ThreadsafeFunctionCallMode::Blocking);
-      }
+      tsfn.call(Ok(item), ThreadsafeFunctionCallMode::Blocking);
       Ok(())
     })
   }
@@ -597,7 +643,7 @@ mod tests {
       entries: Some(vec![path_1, path_2]),
       cache_dir: None,
       supported_paths: None,
-      debug: None
+      debug: None,
     });
     assert_eq!(watcher.processed(), true);
   }
@@ -611,7 +657,7 @@ mod tests {
       entries: None,
       cache_dir: None,
       supported_paths: None,
-      debug: None
+      debug: None,
     });
 
     let duration = std::time::Instant::now();
@@ -635,7 +681,7 @@ mod tests {
       entries: Some(vec![path_1.clone(), path_2.clone()]),
       cache_dir: None,
       supported_paths: None,
-      debug: None
+      debug: None,
     });
 
     // First call, we expect to detect two changes of type added
@@ -707,7 +753,7 @@ mod tests {
       entries: Some(vec![path_1]),
       cache_dir: None,
       supported_paths: None,
-      debug: None
+      debug: None,
     });
     assert_eq!(watcher.processed(), true);
 

@@ -19,7 +19,7 @@ pub struct FileItem {
   pub deps: HashSet<String>,
 }
 
-#[napi(object)]
+#[napi(object, js_name = "FileItem")]
 pub struct NapiFileItem {
   pub path: String,
   pub deps: Vec<String>,
