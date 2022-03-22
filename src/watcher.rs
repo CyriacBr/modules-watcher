@@ -463,7 +463,6 @@ impl Watcher {
         match event {
           Event::Create(_) | Event::Rename(_, _) => {
             if path.as_path().is_file() {
-              mutself.make_file_deps(path_str);
               mutself.update_store();
               mutself.update_entries_from_store();
               need_watch_refresh = true;
@@ -509,7 +508,7 @@ impl Watcher {
             let maybe_item = mutself.store.get(path_str).map(|x| x.value().clone_item());
             if let Some(item) = maybe_item {
               if mutself.debug {
-                println!("[Watcher::watch] looking for entries of {:?}", item);
+                println!("[Watcher::watch] looking for entries of {:#?}", item);
               }
               let entries = mutself.get_entries_from_item(&item);
               Some(entries.into_iter().map(|x| x.clone_item()).collect())
@@ -537,7 +536,7 @@ impl Watcher {
           Ok(event) => {
             let mutself = inner.lock().unwrap();
             if mutself.debug {
-              println!("[ModulesWatcher::watch] event: {:?}", event);
+              println!("[Watcher::watch] event: {:?}", event);
             }
             drop(mutself);
             match &event {
