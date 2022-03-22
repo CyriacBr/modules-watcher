@@ -161,7 +161,7 @@ impl WatcherInner {
     self
       .entries
       .iter()
-      .filter(|x| usage.clone().any(|y| y == x.path.to_str().unwrap()))
+      .filter(|x| usage.clone().any(|y| y == &x.path))
       .collect()
   }
 
@@ -188,10 +188,10 @@ impl WatcherInner {
       .entries
       .iter()
       .map(|x| {
-        let key = x.path.to_str().unwrap();
-        if let Some(item) = self.store.get(key) {
+        let key = x.path.to_string();
+        if let Some(item) = self.store.get(&key) {
           let mut res_item = item.clone_item();
-          res_item.deps.retain(|x| self.store.contains_key(x));
+          res_item.deps.retain(|x| self.store.contains_key(&x.to_string()));
           return Some(res_item);
         }
         None
@@ -201,13 +201,13 @@ impl WatcherInner {
   }
 
   pub fn remove_dep(&self, dep: &str) {
-    self.store.remove(dep);
+    self.store.remove(&dep.to_string());
     self.store.par_iter_mut().for_each(|mut x| {
-      x.deps.retain(|d| d != dep);
+      x.deps.retain(|d| d.to_string() != dep);
     });
   }
 
-  fn make_file_deps(&self, file_path: &str) -> Vec<String> {
+  fn make_file_deps(&self, file_path: &str) -> Vec<Arc<str>> {
     if self.store.contains_key(file_path) {
       self.store.remove(file_path).unwrap();
     }
@@ -220,7 +220,7 @@ impl WatcherInner {
       &self.make_entries_opts,
     )
     .unwrap();
-    res.deps.iter().map(String::from).collect()
+    res.deps.iter().map(|x| x.clone()).collect()
   }
 
   fn get_checksums_cache(&self) -> HashMap<String, i64> {
@@ -277,15 +277,15 @@ impl WatcherInner {
         // for each entry
 
         // we update entry deps if the file got modified
-        let entry_path = x.path.to_str().unwrap();
-        let (entry_checksum, entry_state) = self.get_file_state(entry_path, &old_checksum_store);
-        let mut deps = x.deps.iter().map(String::from).collect();
+        let entry_path = x.path.to_string();
+        let (entry_checksum, entry_state) = self.get_file_state(&entry_path, &old_checksum_store);
+        let mut deps: Vec<String> = x.deps.iter().map(|x| x.to_string()).collect();
         if entry_state == FileState::Modified {
-          deps = self.make_file_deps(entry_path);
+          deps = self.make_file_deps(&entry_path).iter().map(|x| x.to_string()).collect();
         }
 
         let mut tree: Vec<String> = Vec::new();
-        let mut files = vec![x.path.to_str().unwrap().to_string()];
+        let mut files = vec![x.path.to_string()];
         files.extend(deps.into_iter());
         // collect changes for each deps (entry included) of the current entry
         let entry_changes: Vec<Option<EntryChange>> = files
@@ -309,7 +309,7 @@ impl WatcherInner {
                   } else {
                     "dep-deleted".to_string()
                   },
-                  entry: x.path.to_str().unwrap().to_string(),
+                  entry: x.path.to_string(),
                   tree: if is_entry { None } else { Some(tree.clone()) },
                 });
               }
@@ -320,7 +320,7 @@ impl WatcherInner {
                   } else {
                     "dep-added".to_string()
                   },
-                  entry: x.path.to_str().unwrap().to_string(),
+                  entry: x.path.to_string(),
                   tree: if is_entry { None } else { Some(tree.clone()) },
                 });
               }
@@ -331,7 +331,7 @@ impl WatcherInner {
                   } else {
                     "dep-modified".to_string()
                   },
-                  entry: x.path.to_str().unwrap().to_string(),
+                  entry: x.path.to_string(),
                   tree: if is_entry { None } else { Some(tree.clone()) },
                 });
               }
@@ -385,7 +385,9 @@ impl WatcherInner {
     set.insert(self.setup_options.project_root.clone());
     // TODO: ignore nested folders when a parent foldr is already selected
     for ref_multi in &self.store {
-      let parent = ref_multi.path.parent().unwrap();
+      let path_str = ref_multi.path.to_string();
+      let path_str = PathBuf::from(path_str);
+      let parent = path_str.parent().unwrap();
       set.insert(parent.to_str().unwrap().to_string());
     }
     set.into_iter().collect()

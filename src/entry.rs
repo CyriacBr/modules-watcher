@@ -6,6 +6,7 @@ use rayon::prelude::*;
 use std::collections::HashSet;
 use std::fs::*;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
 #[path = "./path_clean.rs"]
 mod path_clean;
@@ -15,8 +16,8 @@ use path_clean::*;
 
 #[derive(Debug)]
 pub struct FileItem {
-  pub path: PathBuf,
-  pub deps: HashSet<String>,
+  pub path: Arc<str>,
+  pub deps: HashSet<Arc<str>>,
 }
 
 #[napi(object, js_name = "FileItem")]
@@ -28,27 +29,27 @@ pub struct NapiFileItem {
 impl FileItem {
   pub fn clone_item(&self) -> FileItem {
     FileItem {
-      path: PathBuf::from(&self.path),
-      deps: self.deps.iter().map(String::from).collect(),
+      path: self.path.clone(),
+      deps: self.deps.clone(),
     }
   }
 
-  pub fn get_usage(&self, store: &DashMap<String, FileItem>) -> Vec<String> {
-    let self_path = self.path.to_str().unwrap().to_string();
-    let res: Vec<String> = store
+  pub fn get_usage(&self, store: &DashMap<String, FileItem>) -> Vec<Arc<str>> {
+    let self_path = self.path.clone();
+    let res: Vec<Arc<str>> = store
       .iter()
       .filter(|item| {
-        if item.path.to_str().unwrap() == self_path {
+        if item.path == self_path {
           return true;
         }
         for dep in &item.deps {
-          if dep.eq(&self_path) {
+          if dep == &self_path {
             return true;
           }
         }
         false
       })
-      .map(|item| item.value().path.to_str().unwrap().to_string())
+      .map(|item| item.value().path.clone())
       .collect();
 
     res
@@ -56,8 +57,8 @@ impl FileItem {
 
   pub fn to_napi(&self) -> NapiFileItem {
     NapiFileItem {
-      path: self.path.to_str().unwrap().to_string(),
-      deps: self.deps.iter().map(String::from).collect(),
+      path: self.path.to_string(),
+      deps: self.deps.iter().map(|x| x.to_string()).collect(),
     }
   }
 }
@@ -206,11 +207,11 @@ pub fn make_file_item<'a>(
   store.insert(
     key.to_string(),
     FileItem {
-      path: PathBuf::from(&file_path),
+      path: file_path.to_str().unwrap().into(),
       deps: HashSet::new(),
     },
   );
-  let mut all_deps: HashSet<String> = HashSet::new();
+  let mut all_deps: HashSet<Arc<str>> = HashSet::new();
 
   // Scan file for imports
   let content = read_to_string(&file_path)
@@ -249,7 +250,7 @@ pub fn make_file_item<'a>(
         panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
       }
     }
-    all_deps.insert(path_buf.to_str().unwrap().to_string());
+    all_deps.insert(path_buf.to_str().unwrap().into());
     if let Some(file_ref) = make_file_item(&path_buf.clone(), project_path, store, opts) {
       all_deps.extend(file_ref.deps.clone());
     }
@@ -517,8 +518,8 @@ mod tests {
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
 
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
+    let deps: Vec<String> = res.deps.iter().map(|x| x.to_string()).collect();
+    let path_str = res.path.to_string();
     let dep_1_path_str = &deps[0];
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
@@ -535,8 +536,8 @@ mod tests {
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
 
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
+    let deps: Vec<String> = res.deps.iter().map(|x| x.to_string()).collect();
+    let path_str = res.path.to_string();
     let dep_1_path_str = &deps[0];
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
@@ -553,8 +554,8 @@ mod tests {
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
 
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
+    let deps: Vec<String> = res.deps.iter().map(|x| x.to_string()).collect();
+    let path_str = res.path.to_string();
     let dep_1_path_str = &deps[0];
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
@@ -571,8 +572,8 @@ mod tests {
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
 
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
+    let deps: Vec<String> = res.deps.iter().map(|x| x.to_string()).collect();
+    let path_str = res.path.to_string();
     let dep_1_path_str = &deps[0];
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
@@ -589,8 +590,8 @@ mod tests {
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
 
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
+    let deps: Vec<String> = res.deps.iter().map(|x| x.to_string()).collect();
+    let path_str = res.path.to_string();
     let dep_1_path_str = &deps[0];
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
@@ -607,8 +608,8 @@ mod tests {
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 2 as usize);
 
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
+    let deps: Vec<String> = res.deps.iter().map(|x| x.to_string()).collect();
+    let path_str = res.path.to_string();
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
       deps.contains(&PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string()),
@@ -628,8 +629,8 @@ mod tests {
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 2 as usize);
 
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
+    let deps: Vec<String> = res.deps.iter().map(|x| x.to_string()).collect();
+    let path_str = res.path.to_string();
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
       deps.contains(&PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string()),
@@ -649,8 +650,8 @@ mod tests {
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
 
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
+    let deps: Vec<String> = res.deps.iter().map(|x| x.to_string()).collect();
+    let path_str = res.path.to_string();
     let dep_1_path_str = &deps[0];
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
@@ -667,8 +668,8 @@ mod tests {
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
     assert_eq!(res.deps.len(), 1 as usize);
 
-    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
-    let path_str = res.path.to_str().unwrap();
+    let deps: Vec<String> = res.deps.iter().map(|x| x.to_string()).collect();
+    let path_str = res.path.to_string();
     let dep_1_path_str = &deps[0];
     assert_eq!(path_str, path.to_str().unwrap());
     assert_eq!(
