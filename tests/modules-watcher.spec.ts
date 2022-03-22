@@ -1,5 +1,5 @@
 import test from "tape";
-import { ModulesWatcher, NapiFileItem } from "../";
+import { ModulesWatcher } from "../";
 import * as Path from "path";
 import * as fs from "fs";
 
@@ -312,7 +312,7 @@ test(`watch()`, async (t) => {
       }, 3000);
       watcher.watch(true, (err, res) => {
         t.ok(res);
-        t.is(res![0].path, Path.join(projectDPath, "./to-watch1.js"));
+        t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
@@ -329,9 +329,9 @@ test(`watch()`, async (t) => {
       }, 3000);
       watcher.watch(true, (err, res) => {
         t.ok(res);
-        t.is(res![0].path, Path.join(projectDPath, "./to-watch1.js"));
-        t.is(res![0].deps.length, 1);
-        t.is(res![0].deps[0], Path.join(projectDPath, "./file1.js"));
+        t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
+        t.is(res!.affectedEntries![0].deps.length, 1);
+        t.is(res!.affectedEntries![0].deps[0], Path.join(projectDPath, "./file1.js"));
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
@@ -351,7 +351,7 @@ test(`watch()`, async (t) => {
       }, 3000);
       watcher.watch(true, (err, res) => {
         t.ok(res);
-        t.is(res![0].path, Path.join(projectDPath, "./to-watch1.js"));
+        t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
@@ -374,7 +374,7 @@ test(`watch()`, async (t) => {
         if (counter === 0) {
           // to-watch1 changed
           t.ok(res);
-          t.is(res![0].path, Path.join(projectDPath, "./to-watch1.js"));
+          t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
           t.is(
             watcher
               .getDirsToWatch()
@@ -395,7 +395,7 @@ test(`watch()`, async (t) => {
           // a change from ts-node/dist
           t.ok(res);
           t.is(
-            res![0].path,
+            res!.affectedFile,
             Path.join(projectDPath, "../../../node_modules/ts-node/dist/foo.js")
           );
           clearTimeout(rejectTimeout);
@@ -421,7 +421,7 @@ test(`watch()`, async (t) => {
       }, 3000);
       watcher.watch(true, (err, res) => {
         t.ok(res);
-        t.is(res![0].path, Path.join(projectDPath, "./to-watch1.js"));
+        t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
