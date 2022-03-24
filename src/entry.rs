@@ -214,7 +214,7 @@ pub fn make_file_item<'a>(
 
   // Scan file for imports
   let content = read_to_string(&file_path)
-    .unwrap_or_else(|_| panic!("Couldn't read file {} ", file_path.to_str().unwrap()));
+    .unwrap_or_else(|_| panic!("Couldn't read file {} ", key));
 
   let imports = parse_deps(&content, parse_conditions);
   for source_imp in imports {

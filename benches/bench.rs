@@ -1,4 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use dashmap::DashMap;
 use lazy_static::lazy_static;
 use std::path::{Path, PathBuf};
 
@@ -13,7 +14,7 @@ mod parser;
 #[path = "../src/watcher.rs"]
 mod watcher;
 
-use entry::MakeEntriesOptions;
+use entry::{MakeEntriesOptions, make_file_item};
 use watcher::{SetupOptions, Watcher};
 
 lazy_static! {
@@ -55,5 +56,18 @@ fn bench_make_changes(c: &mut Criterion) {
   group.finish();
 }
 
-criterion_group!(benches, bench_make_entries, bench_make_changes);
+
+fn bench_make_file_item(c: &mut Criterion) {
+  let file_path = CWD.join("tests").join("fixtures").join("three_js").join("core").join("BufferAttribute.js");
+
+  c.bench_function("make_file_item", |b| {
+    b.iter(|| {
+      let store = DashMap::new();
+      make_file_item(file_path.as_path(), Path::new(THREEJS_PATH.to_str().unwrap()), &store, &None);
+    });
+  });
+  
+}
+
+criterion_group!(benches, bench_make_entries, bench_make_changes, bench_make_file_item);
 criterion_main!(benches);
