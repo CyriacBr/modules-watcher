@@ -1,22 +1,26 @@
 # Modules Watcher
 
-This library provides a way to implement hot module reloading for your javascript projects.  
+[![CI](https://github.com/CyriacBr/modules-watcher/actions/workflows/CI.yml/badge.svg)](https://github.com/CyriacBr/modules-watcher/actions/workflows/CI.yml)
+
+This library provides a way to implement smart watch mode or hot module reloading for your javascript projects.  
 `modules-watcher` is standalone, and doesn't rely on any existing bundler or compile tool. It simply takes the
-paths and globs of the files you wish to "watch" and will walk through every one of their dependencies to notify you
-if any of them update.  
+paths and/or globs of the files you wish to "watch" (entries) and will walk through every one of their dependencies to appropriatly react when an entry change.
 Dependencies are resolved using these rules:  
-* ECMASCRIPT imports  
+* ESM imports  
   * `import [whatever] from 'bar'`
   * `import('bar')`
 * CJS imports
   * `require('foo')`
+* (S)CSS imports
+  * `@import foo.css`
+  * `@import "foo.css", url('bar.css')`
 * Supports both node modules and relative imports
   * When importing a node module, `modules-watcher` will resolve it's entry file the same way `require.resolve` does.
 * Supports `~/`
 
-Scanning these imports relies entirely on RegExp, so `modules-watcher` doesn't care about the syntax of your files and their AST. So you can watch `mdx` or even `txt` files all you want. As long as they contain some forms of imports, they'll be picked-up. However, you can configure which imports to scan given a specific list of extensions.
-
-Furthermore, `modules-watcher` comes with a cache, allowing you to get the changes between multiple usages.
+`modules-watcher` uses a custom parser to scan imports depending on the extension of the file being parsed.
+Furthermore, it comes with a cache, allowing you to get the changes between multiple usages. So you can detect changes that happened to your entries
+while you weren't actively watching.
 
 ## Usage
 
@@ -75,7 +79,7 @@ changes[0];
 changes[1]; // { changeType: 'modified', entry: 'path/bar.mdx' }
 changes[2]; // { changeType: 'deleted', entry: 'path/baz.mdx' }
 ```
-Based on `changeType`, you can know if an entry was directly modified or if its dependencies changed.  
+Based on `changeType`, it's possible to know if an entry was directly modified or if its dependencies are the ones that changed.  
 Naturally, if an entry is modified with a new import statement, you'll get a change with `dep-added` for that entry.
 
 ### Actively watching for changes
@@ -100,6 +104,26 @@ watcher.watch(true, (err, entries) => {
 watcher.stopWatch();
 ```
 Note that `watch` can't be called consecutively without `stopWatch` after each `watch`.
+
+### Configure the parser
+
+When using `setup`, it's possible to specify how imports are parsed according to the extension of the file being read.
+```ts
+const watcher = ModulesWatcher.setup({
+  ...,
+  // default values:
+  supportedPaths: {
+    // parse ESM imports on these extensions
+    esm: ["cjs", "esm", "js", "ts", "tsx", "jsx", "cts", "mts", "mdx"],
+    // parse import() on these extensions
+    dyn_esm: ["cjs", "esm", "js", "ts", "tsx", "jsx", "cts", "mts"],
+    // parse require() on these extensions
+    cjs: ["cjs", "esm", "js", "ts", "tsx", "jsx", "cts", "mts"],
+    // parse CSS imports on these extensions
+    css: ["css", "scss", "sass"]
+  }
+})
+```
 
 ### Other methods
 
