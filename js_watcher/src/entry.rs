@@ -7,60 +7,9 @@ use std::collections::HashSet;
 use std::fs::*;
 use std::path::{Component, Path, PathBuf};
 
-#[path = "./path_clean.rs"]
-mod path_clean;
-
+use crate::file_item::FileItem;
 use crate::parser::{parse_deps, ImportDep, ParseConditions};
-use path_clean::*;
-
-#[derive(Debug)]
-pub struct FileItem {
-  pub path: PathBuf,
-  pub deps: HashSet<String>,
-}
-
-#[napi(object, js_name = "FileItem")]
-pub struct NapiFileItem {
-  pub path: String,
-  pub deps: Vec<String>,
-}
-
-impl FileItem {
-  pub fn clone_item(&self) -> FileItem {
-    FileItem {
-      path: PathBuf::from(&self.path),
-      deps: self.deps.iter().map(String::from).collect(),
-    }
-  }
-
-  pub fn get_usage(&self, store: &DashMap<String, FileItem>) -> Vec<String> {
-    let self_path = self.path.to_str().unwrap().to_string();
-    let res: Vec<String> = store
-      .iter()
-      .filter(|item| {
-        if item.path.to_str().unwrap() == self_path {
-          return true;
-        }
-        for dep in &item.deps {
-          if dep.eq(&self_path) {
-            return true;
-          }
-        }
-        false
-      })
-      .map(|item| item.value().path.to_str().unwrap().to_string())
-      .collect();
-
-    res
-  }
-
-  pub fn to_napi(&self) -> NapiFileItem {
-    NapiFileItem {
-      path: self.path.to_str().unwrap().to_string(),
-      deps: self.deps.iter().map(String::from).collect(),
-    }
-  }
-}
+use crate::path_clean::*;
 
 
 #[derive(Clone)]

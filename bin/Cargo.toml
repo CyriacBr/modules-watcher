@@ -1,0 +1,8 @@
+[package]
+name = "bin"
+version = "0.1.0"
+edition = "2021"
+
+
+[dependencies]
+js_watcher = { path = "../js_watcher", features = ["without-napi"] }

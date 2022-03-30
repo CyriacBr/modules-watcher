@@ -1,12 +1,14 @@
 use crate::entry::{
-  make_entries, make_file_item, make_missing_entries, FileItem, MakeEntriesOptions, NapiFileItem,
-  SupportedPaths,
+  make_entries, make_file_item, make_missing_entries, MakeEntriesOptions, SupportedPaths,
 };
+use crate::file_item::FileItem;
+use crate::watch_info::WatchInfo;
 use dashmap::DashMap;
-use hotwatch::Event;
+use napi::bindgen_prelude::Object;
 use napi::threadsafe_function::{
   ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode,
 };
+use notify::DebouncedEvent;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
@@ -40,38 +42,6 @@ pub struct EntryChange {
   pub tree: Option<Vec<String>>,
 }
 
-pub struct WatchInfo {
-  pub event: notify::DebouncedEvent,
-  pub affected_file: String,
-  pub affected_entries: Option<Vec<FileItem>>,
-}
-
-impl WatchInfo {
-  pub fn to_napi(&self) -> NapiWatchInfo {
-    NapiWatchInfo {
-      event: match self.event {
-        Event::Create(_) => String::from("created"),
-        Event::Remove(_) => String::from("deleted"),
-        Event::Write(_) => String::from("modified"),
-        Event::Rename(_, _) => String::from("renamed"),
-        _ => String::new(),
-      },
-      affected_file: self.affected_file.clone(),
-      affected_entries: self
-        .affected_entries
-        .as_ref()
-        .map(|vec| vec.into_iter().map(|x| x.to_napi()).collect()),
-    }
-  }
-}
-
-#[napi(object, js_name = "WatchInfo")]
-pub struct NapiWatchInfo {
-  pub event: String,
-  pub affected_file: String,
-  pub affected_entries: Option<Vec<NapiFileItem>>,
-}
-
 #[derive(PartialEq, Debug, Clone)]
 pub enum FileState {
   NotModified,
@@ -80,7 +50,7 @@ pub enum FileState {
   Deleted,
 }
 
-pub struct WatcherInner {
+struct WatcherInner {
   pub setup_options: SetupOptions,
   store: DashMap<String, FileItem>,
   entries: Vec<FileItem>,
@@ -151,8 +121,8 @@ impl WatcherInner {
     }
   }
 
-  pub fn get_entries(&self) -> Vec<NapiFileItem> {
-    self.entries.iter().map(|x| x.to_napi()).collect()
+  pub fn get_entries(&self) -> Vec<FileItem> {
+    self.entries.iter().map(|x| x.clone_item()).collect()
   }
 
   pub fn get_entries_from_item(&self, item: &FileItem) -> Vec<&FileItem> {
@@ -417,7 +387,7 @@ impl Watcher {
   }
 
   #[napi]
-  pub fn get_entries(&self) -> Vec<NapiFileItem> {
+  pub fn get_entries(&self) -> Vec<FileItem> {
     self.inner.lock().unwrap().get_entries()
   }
 
@@ -435,7 +405,7 @@ impl Watcher {
   where
     F: Fn(WatchInfo) -> Result<(), ()> + std::marker::Sync + std::marker::Send + 'static,
   {
-    use notify::{watcher, RecursiveMode, Watcher};
+    use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
     use std::sync::mpsc::channel;
 
     let paths = self.get_dirs_to_watch();
@@ -461,14 +431,14 @@ impl Watcher {
         let path_str = path.to_str().unwrap();
         let mut need_watch_refresh = false;
         match event {
-          Event::Create(_) | Event::Rename(_, _) => {
+          DebouncedEvent::Create(_) | DebouncedEvent::Rename(_, _) => {
             if path.as_path().is_file() {
               mutself.update_store();
               mutself.update_entries_from_store();
               need_watch_refresh = true;
             }
           }
-          Event::Write(_) => {
+          DebouncedEvent::Write(_) => {
             if mutself.store.contains_key(path_str) {
               let duration = std::time::Instant::now();
               mutself.make_file_deps(path_str);
@@ -540,10 +510,12 @@ impl Watcher {
             }
             drop(mutself);
             match &event {
-              Event::Write(path) | Event::Create(path) | Event::Remove(path) => {
+              DebouncedEvent::Write(path)
+              | DebouncedEvent::Create(path)
+              | DebouncedEvent::Remove(path) => {
                 event_handler(path.to_path_buf(), event);
               }
-              Event::Rename(before, after) => {
+              DebouncedEvent::Rename(before, after) => {
                 let mutself = inner.lock().unwrap();
                 mutself.remove_dep(before.to_str().unwrap());
                 drop(mutself);
@@ -574,33 +546,8 @@ impl Watcher {
   pub fn napi_watch(&mut self, retrieve_entries: bool, callback: napi::JsFunction) {
     let tsfn: ThreadsafeFunction<WatchInfo, ErrorStrategy::CalleeHandled> = callback
       .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<WatchInfo>| {
-        let info = ctx.value.to_napi();
-
-        let mut obj = ctx.env.create_object().unwrap();
-        obj.set("event", info.event).unwrap();
-        obj.set("affectedFile", info.affected_file).unwrap();
-
-        if let Some(entries) = info.affected_entries {
-          let mut entries_arr = ctx.env.create_array(entries.len() as u32).unwrap();
-          for (i, entry) in entries.iter().enumerate() {
-            let mut entry_obj = ctx.env.create_object().unwrap();
-            let mut deps_array = ctx.env.create_array(entry.deps.len() as u32).unwrap();
-            for (j, dep) in entry.deps.iter().enumerate() {
-              deps_array.set(j as u32, dep.clone()).unwrap();
-            }
-            entry_obj.set("path", entry.path.clone()).unwrap();
-            entry_obj
-              .set("deps", deps_array.coerce_to_object())
-              .unwrap();
-            entries_arr.set(i as u32, entry_obj).unwrap();
-          }
-          obj.set("affectedEntries", entries_arr).unwrap();
-        } else {
-          obj
-            .set("affectedEntries", ctx.env.create_array(0u32).unwrap())
-            .unwrap();
-        }
-
+        let info = ctx.value;
+        let obj = info.to_napi_obj(ctx.env).unwrap();
         return Ok(vec![obj]);
       })
       .unwrap();
