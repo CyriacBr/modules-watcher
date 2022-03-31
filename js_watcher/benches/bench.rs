@@ -3,19 +3,8 @@ use dashmap::DashMap;
 use lazy_static::lazy_static;
 use std::path::{Path, PathBuf};
 
-#[macro_use]
-extern crate napi_derive;
-extern crate core;
-
-#[path = "../src/entry.rs"]
-mod entry;
-#[path = "../src/parser.rs"]
-mod parser;
-#[path = "../src/watcher.rs"]
-mod watcher;
-
-use entry::{MakeEntriesOptions, make_file_item};
-use watcher::{SetupOptions, Watcher};
+use js_watcher::entry::{MakeEntriesOptions, make_file_item, make_entries};
+use js_watcher::watcher::{SetupOptions, Watcher};
 
 lazy_static! {
   static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
@@ -26,7 +15,7 @@ fn bench_make_entries(c: &mut Criterion) {
   let mut group = c.benchmark_group("make_entries");
   group.bench_function("three_js (all supported paths)", |b| {
     b.iter_with_large_drop(|| {
-      entry::make_entries(
+      make_entries(
         Vec::new(),
         Some(vec!["**/*.js"]),
         THREEJS_PATH.to_path_buf(),

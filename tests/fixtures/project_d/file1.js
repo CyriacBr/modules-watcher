@@ -1,1 +1,0 @@
-export const FILE_1 = 1647946692708;

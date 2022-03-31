@@ -4,11 +4,9 @@ use crate::entry::{
 use crate::file_item::FileItem;
 use crate::watch_info::WatchInfo;
 use dashmap::DashMap;
-use napi::bindgen_prelude::Object;
 use napi::threadsafe_function::{
   ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode,
 };
-use notify::DebouncedEvent;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
@@ -67,7 +65,7 @@ pub struct Watcher {
 }
 
 impl WatcherInner {
-  pub fn clone_struct(&self) -> WatcherInner {
+  pub fn _clone_struct(&self) -> WatcherInner {
     let store: DashMap<String, FileItem> = DashMap::new();
     for ref_multi in &self.store {
       store.insert(ref_multi.key().to_string(), ref_multi.value().clone_item());

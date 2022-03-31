@@ -9,10 +9,6 @@ export class ExternalObject<T> {
     [K: symbol]: T
   }
 }
-export interface FileItem {
-  path: string
-  deps: Array<string>
-}
 export interface SupportedPaths {
   esm?: Array<string> | undefined | null
   dynEsm?: Array<string> | undefined | null
@@ -32,11 +28,6 @@ export interface EntryChange {
   changeType: string
   entry: string
   tree?: Array<string> | undefined | null
-}
-export interface WatchInfo {
-  event: string
-  affectedFile: string
-  affectedEntries?: Array<FileItem> | undefined | null
 }
 export type Watcher = ModulesWatcher
 export class ModulesWatcher {
