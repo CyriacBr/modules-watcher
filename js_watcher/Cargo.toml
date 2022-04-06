@@ -25,6 +25,8 @@ nom = "7.1.0"
 
 [dev-dependencies]
 criterion = "0.3"
+memmap2 = "0.5.3"
+wyhash = "0.5.0"
 
 [build-dependencies]
 napi-build = "1.2.1"
@@ -39,4 +41,8 @@ codegen-units = 1
 
 [[bench]]
 name = "bench"
+harness = false
+
+[[bench]]
+name = "checksum"
 harness = false
