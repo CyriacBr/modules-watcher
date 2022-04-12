@@ -50,7 +50,7 @@ pub fn make_missing_entries(
     let full_glob = if glob_str.starts_with('/') {
       glob_str.to_owned()
     } else {
-      project_path.join(glob_str).to_str().unwrap().to_owned()
+      project_path.join(glob_str).clean().to_str().unwrap().to_owned()
     };
     paths.extend(
       glob(&full_glob)
