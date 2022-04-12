@@ -67,7 +67,8 @@ pub fn make_missing_entries(
 
   let entries = paths
     .iter()
-    .map(|x| store.get(x.to_str().unwrap()).unwrap().clone_item())
+    .map(|x| store.get(x.to_str().unwrap())).filter(|x| x.is_some())
+    .map(|x| x.unwrap().clone_item())
     .collect();
   entries
 }
