@@ -9,6 +9,7 @@ use notify::DebouncedEvent;
 
 use crate::file_item::FileItem;
 
+#[derive(Debug)]
 pub struct WatchInfo {
   pub event: notify::DebouncedEvent,
   pub affected_file: String,
@@ -25,21 +26,24 @@ impl napi::bindgen_prelude::TypeName for WatchInfo {
 }
 
 impl WatchInfo {
+  pub fn event_to_string(&self) -> String {
+    match self.event {
+      DebouncedEvent::Create(_) => String::from("created"),
+      DebouncedEvent::Remove(_) => String::from("deleted"),
+      DebouncedEvent::Write(_) => String::from("modified"),
+      DebouncedEvent::Rename(_, _) => String::from("renamed"),
+      _ => String::new(),
+    }
+  }
+
   pub fn to_napi_obj(&self, env_wrapper: Env) -> napi::bindgen_prelude::Result<JsObject> {
     let mut obj = env_wrapper.create_object()?;
-    let event = &self.event;
     let affected_file = self.affected_file.clone();
     let affected_entries: Option<Vec<FileItem>> = self.affected_entries.as_ref().map(|x| x.iter().map(|i| i.clone_item()).collect());
 
     obj.set(
       "event",
-      match event {
-        DebouncedEvent::Create(_) => String::from("created"),
-        DebouncedEvent::Remove(_) => String::from("deleted"),
-        DebouncedEvent::Write(_) => String::from("modified"),
-        DebouncedEvent::Rename(_, _) => String::from("renamed"),
-        _ => String::new(),
-      },
+      self.event_to_string(),
     )?;
     obj.set("affectedFile", affected_file)?;
     if let Some(affected_entries) = affected_entries {
