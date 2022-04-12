@@ -106,7 +106,7 @@ pub fn make_file_item<'a>(
         css: None,
       },
     };
-    let js_exts: Vec<&str> = vec!["cjs", "esm", "js", "ts", "tsx", "jsx", "cts", "mts"];
+    let js_exts: Vec<&str> = vec!["cjs", "mjs", "js", "ts", "tsx", "jsx", "cts", "mts"];
     let style_exts: Vec<&str> = vec!["css", "scss", "sass"];
     if value.esm.is_none() {
       value.esm = Some(
