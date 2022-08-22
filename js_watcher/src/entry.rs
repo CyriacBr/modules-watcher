@@ -267,6 +267,7 @@ fn resolve_index(path: &Path) -> Option<PathBuf> {
   None
 }
 
+// TODO: handle error
 #[memoize]
 pub fn find_node_modules_dir(root: PathBuf) -> Option<PathBuf> {
   let mut counter: u8 = 0;

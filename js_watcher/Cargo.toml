@@ -31,14 +31,6 @@ wyhash = "0.5.0"
 [build-dependencies]
 napi-build = "1.2.1"
 
-[profile.release]
-lto = true
-codegen-units = 1
-
-[profile.test]
-lto = true
-codegen-units = 1
-
 [[bench]]
 name = "bench"
 harness = false

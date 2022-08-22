@@ -2,3 +2,11 @@
 members = [
     "bin", "js_watcher"
 ]
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[profile.test]
+lto = true
+codegen-units = 1

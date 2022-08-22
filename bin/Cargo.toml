@@ -3,16 +3,10 @@ name = "bin"
 version = "0.1.0"
 edition = "2021"
 
-
 [dependencies]
 js_watcher = { path = "../js_watcher", features = ["without-napi"] }
-path-absolutize = "3.0.12"
-
-
-[profile.release]
-lto = true
-codegen-units = 1
-
-[profile.test]
-lto = true
-codegen-units = 1
+clap = { version = "3.1.8", features = ["derive"] }
+owo-colors = "3.3.0"
+ctrlc = "3.2.1"
+serde_json = "1.0.79"
+shellwords = "1.1.0"
