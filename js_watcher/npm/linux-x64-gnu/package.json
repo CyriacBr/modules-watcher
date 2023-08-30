@@ -1,6 +1,9 @@
 {
   "name": "modules-watcher-linux-x64-gnu",
   "version": "1.0.0",
+  "repository": {
+    "url": "https://github.com/CyriacBr/modules-watcher"
+  },
   "os": [
     "linux"
   ],

@@ -14,10 +14,10 @@
   dependencies:
     "@cspotcode/source-map-consumer" "0.8.0"
 
-"@napi-rs/cli@^2.4.2":
-  version "2.4.2"
-  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-2.4.2.tgz#89b32c7d8776004bc9617915605aea769339cf6f"
-  integrity sha512-+yCOuPqernvD8BMphbadF87ElaJ0rjanOZrbnauaEdR07YyoalGw3FTk15HHyflIwQKlYd69gkG5EM4WFkICKw==
+"@napi-rs/cli@^2.16.3":
+  version "2.16.3"
+  resolved "https://registry.yarnpkg.com/@napi-rs/cli/-/cli-2.16.3.tgz#6943d0614bbb4900a97b18ae074f735864f78c4b"
+  integrity sha512-3mLNPlbbOhpbIUKicLrJtIearlHXUuXL3UeueYyRRplpVMNkdn8xCyzY6PcYZi3JXR8bmCOiWgkVmLnrSL7DKw==
 
 "@nodelib/fs.scandir@2.1.5":
   version "2.1.5"

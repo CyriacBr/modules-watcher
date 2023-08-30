@@ -3,13 +3,16 @@
   "version": "1.0.0",
   "main": "index.js",
   "types": "index.d.ts",
+  "repository": {
+    "url": "https://github.com/CyriacBr/modules-watcher"
+  },
   "napi": {
     "name": "modules-watcher",
     "triples": {}
   },
   "license": "MIT",
   "devDependencies": {
-    "@napi-rs/cli": "^2.4.2",
+    "@napi-rs/cli": "^2.16.3",
     "@types/node": "^17.0.21",
     "@types/tape": "^4.13.2",
     "fast-glob": "^3.2.11",
