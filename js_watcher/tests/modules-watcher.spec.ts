@@ -45,6 +45,10 @@ test(`deps resolving`, async (t) => {
     t.is(deps.includes(Path.join(projectBPath, "file4.js")), true);
   });
 
+  t.test(`resolves files without extension but with a dot`, async (t) => {
+    t.is(deps.includes(Path.join(projectBPath, "file4.something.js")), true);
+  });
+
   t.test(`resolves index file`, async (t) => {
     t.is(deps.includes(Path.join(projectBPath, "file5/index.js")), true);
   });

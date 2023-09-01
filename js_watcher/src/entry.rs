@@ -88,6 +88,8 @@ pub fn make_file_item<'a>(
     );
   }
 
+  let js_exts = &["cjs", "mjs", "js", "ts", "tsx", "jsx", "cts", "mts"];
+  let style_exts = &["css", "scss", "sass"];
   let supported_paths: SupportedPaths = {
     let mut value = match opts {
       Some(opts_val) => match &opts_val.supported_paths {
@@ -106,8 +108,6 @@ pub fn make_file_item<'a>(
         css: None,
       },
     };
-    let js_exts: Vec<&str> = vec!["cjs", "mjs", "js", "ts", "tsx", "jsx", "cts", "mts"];
-    let style_exts: Vec<&str> = vec!["css", "scss", "sass"];
     if value.esm.is_none() {
       value.esm = Some(
         js_exts
@@ -122,7 +122,7 @@ pub fn make_file_item<'a>(
       value.dyn_esm = Some(js_exts.clone().into_iter().map(String::from).collect());
     }
     if value.cjs.is_none() {
-      value.cjs = Some(js_exts.into_iter().map(String::from).collect());
+      value.cjs = Some(js_exts.clone().into_iter().map(String::from).collect());
     }
     if value.css.is_none() {
       value.css = Some(
@@ -191,8 +191,11 @@ pub fn make_file_item<'a>(
         panic!("Couldn't handle import: {}", path_buf.to_str().unwrap());
       }
     }
-    // If the imported file has no extension, we need to resolve it
-    else if path_buf.extension().is_none() {
+    // If the imported file has no known extension, we need to resolve it
+    else if path_buf.extension().is_none()
+      || (!js_exts.contains(&path_buf.extension().unwrap().to_str().unwrap())
+        && !style_exts.contains(&path_buf.extension().unwrap().to_str().unwrap()))
+    {
       if let Some(found) = resolve_with_extension(&path_buf) {
         path_buf = found;
       } else {
@@ -226,7 +229,7 @@ pub fn make_file_item<'a>(
 /// * matches the file_name of the argument
 /// * possess an extension
 fn resolve_with_extension(path: &Path) -> Option<PathBuf> {
-  let file_name = path.file_stem().unwrap();
+  let file_name = path.file_name().unwrap();
   let files = path.parent().unwrap().read_dir().unwrap();
   for entry in files.flatten() {
     let entry_path = entry.path();
@@ -443,7 +446,7 @@ mod tests {
       PROJECT_A_PATH.to_path_buf(),
       &None,
     );
-    assert_eq!(entries.len(), 4 as usize);
+    assert_eq!(entries.len(), 5 as usize);
   }
 
   #[test]
@@ -493,6 +496,24 @@ mod tests {
     assert_eq!(
       dep_1_path_str,
       PROJECT_A_PATH.join("b.js").to_str().unwrap()
+    );
+  }
+
+  #[test]
+  fn make_user_file_relative_path_without_ext_with_dot() {
+    let store = DashMap::new();
+    let path = PROJECT_A_PATH.join("relative_wo_ext_w_dot.js");
+
+    let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+    assert_eq!(res.deps.len(), 1 as usize);
+
+    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
+    let path_str = res.path.to_str().unwrap();
+    let dep_1_path_str = &deps[0];
+    assert_eq!(path_str, path.to_str().unwrap());
+    assert_eq!(
+      dep_1_path_str,
+      PROJECT_A_PATH.join("b.something.js").to_str().unwrap()
     );
   }
 
