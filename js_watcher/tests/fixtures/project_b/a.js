@@ -7,6 +7,8 @@ import { FILE_4_SOMETHING } from "./file4.something";
 import { FILE_5 } from "./file5";
 import { D } from "./d";
 
+export * from './e.js';
+
 import("./file6");
 require("./file7");
 

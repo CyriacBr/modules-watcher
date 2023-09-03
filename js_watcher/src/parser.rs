@@ -14,9 +14,13 @@ pub enum ImportDep {
   CSS(String),
 }
 
+// parse either import or export
+fn parse_esm_token(input: &str) -> IResult<&str, &str> {
+  alt((tag("import"), tag("export")))(input)
+}
+
 fn parse_esm_statement(input: &str) -> IResult<&str, Vec<ImportDep>> {
-  // let (input, _) = nom::bytes::streaming::take_until("import")(input)?;
-  let (input, _) = tag("import")(input)?;
+  let (input, _) = parse_esm_token(input)?;
   let (input, _) = space1(input)?;
 
   fn parse_named(input: &str) -> IResult<&str, ()> {
@@ -46,7 +50,7 @@ fn parse_esm_statement(input: &str) -> IResult<&str, Vec<ImportDep>> {
 }
 
 fn parse_lazy_esm_statement(input: &str) -> IResult<&str, Vec<ImportDep>> {
-  let (input, _) = tag("import")(input)?;
+  let (input, _) = parse_esm_token(input)?;
   let (input, _) = space0(input)?;
   let (input, _) = tag("(")(input)?;
   let (input, _) = space0(input)?;
@@ -159,38 +163,40 @@ mod tests {
 
   #[test]
   fn esm_statement() {
-    // single quotes
-    {
-      let (_, path) = parse_esm_statement("import * as foo from 'foo.js'")
-        .ok()
-        .unwrap();
-      assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
-    }
-    // double quotes
-    {
-      let (_, path) = parse_esm_statement(r#"import * as foo from "foo.js""#)
-        .ok()
-        .unwrap();
-      assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
-    }
-    // named import
-    {
-      let (_, path) = parse_esm_statement("import { foo } from 'foo.js'")
-        .ok()
-        .unwrap();
-      assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
-    }
-    // default export
-    {
-      let (_, path) = parse_esm_statement("import foo from 'foo.js'")
-        .ok()
-        .unwrap();
-      assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
-    }
-    // unnamed
-    {
-      let (_, path) = parse_esm_statement("import 'foo.js'").ok().unwrap();
-      assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
+    for word in vec!["import", "export"] {
+      // single quotes
+      {
+        let (_, path) = parse_esm_statement(&(word.to_owned() + " * as foo from 'foo.js'"))
+          .ok()
+          .unwrap();
+        assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
+      }
+      // double quotes
+      {
+        let (_, path) = parse_esm_statement(&(word.to_owned() + r#" * as foo from "foo.js""#))
+          .ok()
+          .unwrap();
+        assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
+      }
+      // named import
+      {
+        let (_, path) = parse_esm_statement(&(word.to_owned() + " { foo } from 'foo.js'"))
+          .ok()
+          .unwrap();
+        assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
+      }
+      // default export
+      {
+        let (_, path) = parse_esm_statement(&(word.to_owned() + " foo from 'foo.js'"))
+          .ok()
+          .unwrap();
+        assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
+      }
+      // unnamed
+      {
+        let (_, path) = parse_esm_statement(&(word.to_owned() + " 'foo.js'")).ok().unwrap();
+        assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
+      }
     }
   }
 

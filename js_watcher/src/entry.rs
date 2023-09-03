@@ -598,6 +598,23 @@ mod tests {
   }
 
   #[test]
+  fn make_user_file_export() {
+    let store = DashMap::new();
+    let path = PROJECT_A_PATH.join("export.js");
+
+    let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
+    assert_eq!(res.deps.len(), 1 as usize);
+
+    let deps: Vec<String> = res.deps.iter().map(String::from).collect();
+    let path_str = res.path.to_str().unwrap();
+    assert_eq!(path_str, path.to_str().unwrap());
+    assert_eq!(
+      deps.contains(&PROJECT_A_PATH.join("b.js").to_str().unwrap().to_string()),
+      true
+    );
+  }
+
+  #[test]
   fn make_user_file_multiple() {
     let store = DashMap::new();
     let path = PROJECT_A_PATH.join("many.js");

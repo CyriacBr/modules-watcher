@@ -37,6 +37,10 @@ test(`deps resolving`, async (t) => {
     t.is(deps.includes(Path.join(projectBPath, "file6.js")), true);
   });
 
+  t.test(`supports export`, async (t) => {
+    t.is(deps.includes(Path.join(projectBPath, "e.js")), true);
+  });
+
   t.test(`supports require('./foo')`, async (t) => {
     t.is(deps.includes(Path.join(projectBPath, "file7.js")), true);
   });
