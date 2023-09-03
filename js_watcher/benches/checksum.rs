@@ -1,9 +1,13 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use lazy_static::lazy_static;
-use std::{path::{PathBuf}, fs::File, io::{BufReader, BufRead}};
 use memmap2::Mmap;
-use wyhash::WyHash;
 use std::hash::Hasher;
+use std::{
+  fs::File,
+  io::{BufRead, BufReader},
+  path::PathBuf,
+};
+use wyhash::WyHash;
 
 lazy_static! {
   static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
@@ -38,7 +42,7 @@ fn bench_memmap(c: &mut Criterion) {
   c.bench_function("memmap", |b| {
     b.iter(|| {
       let file = File::open(FILE_A.as_path()).unwrap();
-      let mmap = unsafe { Mmap::map(&file).unwrap()  };
+      let mmap = unsafe { Mmap::map(&file).unwrap() };
       crc32fast::hash(&mmap[..]);
     });
   });
@@ -59,7 +63,7 @@ fn bench_bufreader_with_capacity(c: &mut Criterion) {
   c.bench_function("bufreader_with_capacity", |b| {
     b.iter(|| {
       let file = File::open(FILE_A.as_path()).unwrap();
-      let mut reader = BufReader::with_capacity(file.metadata().unwrap().len() as usize + 1,file);
+      let mut reader = BufReader::with_capacity(file.metadata().unwrap().len() as usize + 1, file);
       let bytes = reader.fill_buf().unwrap();
       crc32fast::hash(&bytes);
     });
@@ -85,5 +89,13 @@ fn bench_hash(c: &mut Criterion) {
   group.finish();
 }
 
-criterion_group!(benches, bench_read_to_string, bench_read, bench_memmap, bench_bufreader, bench_bufreader_with_capacity, bench_hash);
+criterion_group!(
+  benches,
+  bench_read_to_string,
+  bench_read,
+  bench_memmap,
+  bench_bufreader,
+  bench_bufreader_with_capacity,
+  bench_hash
+);
 criterion_main!(benches);

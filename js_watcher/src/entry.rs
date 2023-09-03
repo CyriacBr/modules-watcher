@@ -11,7 +11,6 @@ use crate::file_item::FileItem;
 use crate::parser::{parse_deps, ImportDep, ParseConditions};
 use crate::path_clean::*;
 
-
 #[derive(Clone)]
 pub struct MakeEntriesOptions {
   pub supported_paths: Option<SupportedPaths>,
@@ -50,7 +49,12 @@ pub fn make_missing_entries(
     let full_glob = if glob_str.starts_with('/') {
       glob_str.to_owned()
     } else {
-      project_path.join(glob_str).clean().to_str().unwrap().to_owned()
+      project_path
+        .join(glob_str)
+        .clean()
+        .to_str()
+        .unwrap()
+        .to_owned()
     };
     paths.extend(
       glob(&full_glob)
@@ -67,7 +71,8 @@ pub fn make_missing_entries(
 
   let entries = paths
     .iter()
-    .map(|x| store.get(x.to_str().unwrap())).filter(|x| x.is_some())
+    .map(|x| store.get(x.to_str().unwrap()))
+    .filter(|x| x.is_some())
     .map(|x| x.unwrap().clone_item())
     .collect();
   entries
@@ -163,8 +168,8 @@ pub fn make_file_item<'a>(
   let mut all_deps: HashSet<String> = HashSet::new();
 
   // Scan file for imports
-  let content = read_to_string(&file_path)
-    .unwrap_or_else(|_| panic!("Couldn't read file {} ", key));
+  let content =
+    read_to_string(&file_path).unwrap_or_else(|_| panic!("Couldn't read file {} ", key));
 
   let imports = parse_deps(&content, parse_conditions);
   for source_imp in imports {
@@ -776,10 +781,7 @@ mod tests {
         node_modules.as_path(),
       )
       .unwrap();
-      assert_eq!(
-        result,
-        node_modules.join("exports_array/main1.js")
-      );
+      assert_eq!(result, node_modules.join("exports_array/main1.js"));
     }
     {
       let result = resolve_node_module(

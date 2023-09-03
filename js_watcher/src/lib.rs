@@ -3,10 +3,10 @@
 #[path = "./utils/path_clean.rs"]
 pub mod path_clean;
 
-pub mod parser;
-pub mod file_item;
-pub mod watch_info;
 pub mod entry;
+pub mod file_item;
+pub mod parser;
+pub mod watch_info;
 pub mod watcher;
 
 #[macro_use]

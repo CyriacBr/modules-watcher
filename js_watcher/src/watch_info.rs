@@ -39,12 +39,12 @@ impl WatchInfo {
   pub fn to_napi_obj(&self, env_wrapper: Env) -> napi::bindgen_prelude::Result<JsObject> {
     let mut obj = env_wrapper.create_object()?;
     let affected_file = self.affected_file.clone();
-    let affected_entries: Option<Vec<FileItem>> = self.affected_entries.as_ref().map(|x| x.iter().map(|i| i.clone_item()).collect());
+    let affected_entries: Option<Vec<FileItem>> = self
+      .affected_entries
+      .as_ref()
+      .map(|x| x.iter().map(|i| i.clone_item()).collect());
 
-    obj.set(
-      "event",
-      self.event_to_string(),
-    )?;
+    obj.set("event", self.event_to_string())?;
     obj.set("affectedFile", affected_file)?;
     if let Some(affected_entries) = affected_entries {
       let mut entries_arr = env_wrapper.create_array(affected_entries.len() as u32)?;

@@ -11,7 +11,7 @@ use std::ops::Add;
 pub enum ImportDep {
   ESM(String),
   REQUIRE(String),
-  CSS(String)
+  CSS(String),
 }
 
 fn parse_esm_statement(input: &str) -> IResult<&str, Vec<ImportDep>> {
@@ -154,7 +154,7 @@ pub fn parse_deps(input: &str, conditions: ParseConditions) -> Vec<ImportDep> {
 mod tests {
   use crate::parser::{
     parse_css_import_statement, parse_deps, parse_esm_statement, parse_lazy_esm_statement,
-    parse_require_statement,ImportDep
+    parse_require_statement, ImportDep,
   };
 
   #[test]
@@ -252,7 +252,13 @@ mod tests {
       let (_, paths) = parse_css_import_statement(r#"@import 'foo.css', "../bar.css""#)
         .ok()
         .unwrap();
-      assert_eq!(paths, vec![ImportDep::CSS("./foo.css".to_string()), ImportDep::CSS("../bar.css".to_string())]);
+      assert_eq!(
+        paths,
+        vec![
+          ImportDep::CSS("./foo.css".to_string()),
+          ImportDep::CSS("../bar.css".to_string())
+        ]
+      );
     }
     // with noise
     {
