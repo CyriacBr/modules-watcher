@@ -36,7 +36,7 @@
     "test:rust": "cargo test --lib",
     "test:node": "ts-node ./tests/modules-watcher.spec.ts | tap-spec",
     "test": "yarn test:rust && yarn test:node",
-    "bench": "cargo bench --features without-napi",
+    "bench": "cargo bench --bench bench --features without-napi",
     "bench:checksum": "cargo bench --bench checksum --features without-napi",
     "ex:make_entries": "cargo run --example make_entries --features without-napi --release"
   },
