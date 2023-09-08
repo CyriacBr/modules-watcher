@@ -1,4 +1,4 @@
-import test from "tape";
+import { test } from "@japa/runner";
 import { ModulesWatcher } from "../";
 import * as Path from "path";
 import * as fs from "fs";
@@ -8,7 +8,7 @@ const projectCPath = Path.join(__dirname, "./fixtures/project_c");
 const projectDPath = Path.join(__dirname, "./fixtures/project_d");
 const projectEPath = Path.join(__dirname, "./fixtures/project_e");
 
-test(`deps resolving`, async (t) => {
+test.group(`deps resolving`, async () => {
   let watcher = ModulesWatcher.setup({
     project: "b",
     projectRoot: projectBPath,
@@ -17,52 +17,52 @@ test(`deps resolving`, async (t) => {
   let entries = watcher.getEntries();
   let deps = entries[0].deps;
 
-  t.test(`supports import * as foo from './foo'`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "b.js")), true);
+  test(`supports import * as foo from './foo'`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "b.js")));
   });
 
-  t.test(`supports import { foo } from './foo'`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file1.js")), true);
+  test(`supports import { foo } from './foo'`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file1.js")));
   });
 
-  t.test(`supports import foo from './foo'`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file2.js")), true);
+  test(`supports import foo from './foo'`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file2.js")));
   });
 
-  t.test(`supports import './foo'`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file3.js")), true);
+  test(`supports import './foo'`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file3.js")));
   });
 
-  t.test(`supports import('./foo')`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file6.js")), true);
+  test(`supports import('./foo')`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file6.js")));
   });
 
-  t.test(`supports export`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "e.js")), true);
+  test(`supports export`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "e.js")));
   });
 
-  t.test(`supports require('./foo')`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file7.js")), true);
+  test(`supports require('./foo')`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file7.js")));
   });
 
-  t.test(`resolves files without extension`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file4.js")), true);
+  test(`resolves files without extension`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file4.js")));
   });
 
-  t.test(`resolves files without extension but with a dot`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file4.something.js")), true);
+  test(`resolves files without extension but with a dot`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file4.something.js")));
   });
 
-  t.test(`resolves index file`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file5/index.js")), true);
+  test(`resolves index file`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file5/index.js")));
   });
 
-  t.test(`supports ~/`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file13.js")), true);
+  test(`supports ~/`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file13.js")));
   });
 
-  t.test(`resolves node module`, async (t) => {
-    t.is(
+  test(`resolves node module`, async ({assert}) => {
+    assert.equal(
       deps.includes(
         Path.join(projectBPath, "../../../node_modules/ts-node/dist/index.js")
       ),
@@ -70,28 +70,28 @@ test(`deps resolving`, async (t) => {
     );
   });
 
-  t.test(`resolves nested dependencies`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "d.js")), true);
-    t.is(deps.includes(Path.join(projectBPath, "c.js")), true);
+  test(`resolves nested dependencies`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "d.js")));
+    assert.ok(deps.includes(Path.join(projectBPath, "c.js")));
   });
 
-  t.test(`css handling`, async (t) => {
-    t.is(deps.includes(Path.join(projectBPath, "file8.css")), true);
-    t.is(deps.includes(Path.join(projectBPath, "file10.scss")), true);
+  test(`css handling`, async ({assert}) => {
+    assert.ok(deps.includes(Path.join(projectBPath, "file8.css")));
+    assert.ok(deps.includes(Path.join(projectBPath, "file10.scss")));
 
-    t.test(`supports @import url('foo')`, async (t) => {
-      t.is(deps.includes(Path.join(projectBPath, "file9.css")), true);
+    test(`supports @import url('foo')`, async ({assert}) => {
+      assert.ok(deps.includes(Path.join(projectBPath, "file9.css")));
     });
 
-    t.test(`supports multiple files from one @import`, async (t) => {
-      t.is(deps.includes(Path.join(projectBPath, "file11.css")), true);
-      t.is(deps.includes(Path.join(projectBPath, "file12.scss")), true);
+    test(`supports multiple files from one @import`, async ({assert}) => {
+      assert.ok(deps.includes(Path.join(projectBPath, "file11.css")));
+      assert.ok(deps.includes(Path.join(projectBPath, "file12.scss")));
     });
   });
 });
 
-test(`setup options`, async t => {
-  t.test(`supportedPaths work`, async t => {
+test.group(`setup options`, async () => {
+  test(`supportedPaths work`, async ({assert}) => {
     let watcher = ModulesWatcher.setup({
       project: "e",
       projectRoot: projectEPath,
@@ -106,37 +106,37 @@ test(`setup options`, async t => {
 
     const entry1 = entries.find(v => v.path.endsWith("to-watch1.js"))!;
     const entry2 = entries.find(v => v.path.endsWith("to-watch2.lol"))!;
-    t.is(entry1.deps.length, 0);
-    t.is(entry2.deps.length, 1);
+    assert.equal(entry1.deps.length, 0);
+    assert.equal(entry2.deps.length, 1);
   });
 });
 
-test(`make_changes()`, async (t) => {
+test.group(`make_changes()`, async () => {
   let watcher = ModulesWatcher.setup({
     project: "c",
     projectRoot: projectCPath,
     globEntries: ["**/to-watch*.js"],
   });
 
-  t.test(`first call flag everything as created`, async (t) => {
+  test(`first call flag everything as created`, async ({assert}) => {
     if (fs.existsSync(watcher.cacheDir())) {
       fs.rmSync(watcher.cacheDir(), { recursive: true });
     }
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 3);
-    t.is(
+    assert.equal(changes.length, 3);
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch1.js") && !v.tree
       )?.changeType,
       "added"
     );
-    t.is(
+    assert.equal(
       changes.find((v) => v.entry === Path.join(projectCPath, "./to-watch2.js"))
         ?.changeType,
       "added"
     );
-    t.is(
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch1.js") && v.tree
       )?.changeType,
@@ -144,17 +144,17 @@ test(`make_changes()`, async (t) => {
     );
   });
 
-  t.test(`new entries are detected`, async (t) => {
+  test(`new entries are detected`, async ({assert}) => {
     fs.writeFileSync(Path.join(projectCPath, "./to-watch3.js"), "");
 
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 1);
-    t.is(changes[0].entry, Path.join(projectCPath, "./to-watch3.js"));
-    t.is(changes[0].changeType, "added");
+    assert.equal(changes.length, 1);
+    assert.equal(changes[0].entry, Path.join(projectCPath, "./to-watch3.js"));
+    assert.equal(changes[0].changeType, "added");
   });
 
-  t.test(`modifications on entries are detected`, async (t) => {
+  test(`modifications on entries are detected`, async ({assert}) => {
     fs.writeFileSync(
       Path.join(projectCPath, "./to-watch3.js"),
       'console.log("test")'
@@ -162,12 +162,12 @@ test(`make_changes()`, async (t) => {
 
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 1);
-    t.is(changes[0].entry, Path.join(projectCPath, "./to-watch3.js"));
-    t.is(changes[0].changeType, "modified");
+    assert.equal(changes.length, 1);
+    assert.equal(changes[0].entry, Path.join(projectCPath, "./to-watch3.js"));
+    assert.equal(changes[0].changeType, "modified");
   });
 
-  t.test(`new deps from existing files are detected`, async (t) => {
+  test(`new deps from existing files are detected`, async ({assert}) => {
     fs.writeFileSync(
       Path.join(projectCPath, "./to-watch3.js"),
       'import { FILE_2 } from "./file2" '
@@ -175,14 +175,14 @@ test(`make_changes()`, async (t) => {
 
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 2);
-    t.is(
+    assert.equal(changes.length, 2);
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && !v.tree
       )?.changeType,
       "modified"
     );
-    t.is(
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
       )?.changeType,
@@ -190,7 +190,7 @@ test(`make_changes()`, async (t) => {
     );
   });
 
-  t.test(`new deps are detected`, async (t) => {
+  test(`new deps are detected`, async ({assert}) => {
     fs.writeFileSync(
       Path.join(projectCPath, "./file3.js"),
       "export const FILE_3 = 1;"
@@ -202,14 +202,14 @@ test(`make_changes()`, async (t) => {
 
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 2);
-    t.is(
+    assert.equal(changes.length, 2);
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && !v.tree
       )?.changeType,
       "modified"
     );
-    t.is(
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
       )?.changeType,
@@ -217,7 +217,7 @@ test(`make_changes()`, async (t) => {
     );
   });
 
-  t.test(`handle dep modification`, async (t) => {
+  test(`handle dep modification`, async ({assert}) => {
     fs.writeFileSync(
       Path.join(projectCPath, "./file3.js"),
       "export const FILE_3 = 5;"
@@ -225,8 +225,8 @@ test(`make_changes()`, async (t) => {
 
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 1);
-    t.is(
+    assert.equal(changes.length, 1);
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
       )?.changeType,
@@ -234,13 +234,13 @@ test(`make_changes()`, async (t) => {
     );
   });
 
-  t.test(`handle dep removal`, async (t) => {
+  test(`handle dep removal`, async ({assert}) => {
     fs.unlinkSync(Path.join(projectCPath, "./file3.js"));
 
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 1);
-    t.is(
+    assert.equal(changes.length, 1);
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
       )?.changeType,
@@ -248,7 +248,7 @@ test(`make_changes()`, async (t) => {
     );
   });
 
-  t.test(`handle dep restauration`, async (t) => {
+  test(`handle dep restauration`, async ({assert}) => {
     fs.writeFileSync(
       Path.join(projectCPath, "./file3.js"),
       "export const FILE_3 = 5;"
@@ -256,8 +256,8 @@ test(`make_changes()`, async (t) => {
 
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 1);
-    t.is(
+    assert.equal(changes.length, 1);
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
       )?.changeType,
@@ -268,13 +268,13 @@ test(`make_changes()`, async (t) => {
     watcher.makeChanges();
   });
 
-  t.test(`handle entry removal`, async (t) => {
+  test(`handle entry removal`, async ({assert}) => {
     fs.unlinkSync(Path.join(projectCPath, "./to-watch3.js"));
 
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 1);
-    t.is(
+    assert.equal(changes.length, 1);
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && !v.tree
       )?.changeType,
@@ -282,7 +282,7 @@ test(`make_changes()`, async (t) => {
     );
   });
 
-  t.test(`handle entry restauration`, async (t) => {
+  test(`handle entry restauration`, async ({assert}) => {
     fs.writeFileSync(
       Path.join(projectCPath, "./to-watch3.js"),
       'console.Log("foo")'
@@ -290,8 +290,8 @@ test(`make_changes()`, async (t) => {
 
     let changes = watcher.makeChanges();
 
-    t.is(changes.length, 1);
-    t.is(
+    assert.equal(changes.length, 1);
+    assert.equal(
       changes.find(
         (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && !v.tree
       )?.changeType,
@@ -303,7 +303,7 @@ test(`make_changes()`, async (t) => {
   });
 });
 
-test(`watch()`, async (t) => {
+test.group(`watch()`, async () => {
   let watcher = ModulesWatcher.setup({
     project: "d",
     projectRoot: projectDPath,
@@ -313,14 +313,14 @@ test(`watch()`, async (t) => {
     fs.rmSync(watcher.cacheDir(), { recursive: true });
   }
 
-  t.test(`detect new entries`, async (t) => {
-    return new Promise((resolve, reject) => {
+  test(`detect new entries`, async ({assert}) => {
+    return new Promise<void>((resolve, reject) => {
       let rejectTimeout = setTimeout(() => {
         reject();
       }, 3000);
       watcher.watch(true, (err, res) => {
-        t.ok(res);
-        t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
+        assert.ok(res);
+        assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
@@ -330,16 +330,16 @@ test(`watch()`, async (t) => {
     });
   });
 
-  t.test(`detect new dep from existing file`, async (t) => {
-    return new Promise((resolve, reject) => {
+  test(`detect new dep from existing file`, async ({assert}) => {
+    return new Promise<void>((resolve, reject) => {
       let rejectTimeout = setTimeout(() => {
         reject();
       }, 3000);
       watcher.watch(true, (err, res) => {
-        t.ok(res);
-        t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
-        t.is(res!.affectedEntries![0].deps.length, 1);
-        t.is(res!.affectedEntries![0].deps[0], Path.join(projectDPath, "./file1.js"));
+        assert.ok(res);
+        assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
+        assert.equal(res!.affectedEntries![0].deps.length, 1);
+        assert.equal(res!.affectedEntries![0].deps[0], Path.join(projectDPath, "./file1.js"));
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
@@ -352,14 +352,14 @@ test(`watch()`, async (t) => {
     });
   });
 
-  t.test(`detect modified dep`, async (t) => {
-    return new Promise((resolve, reject) => {
+  test(`detect modified dep`, async ({assert}) => {
+    return new Promise<void>((resolve, reject) => {
       let rejectTimeout = setTimeout(() => {
         reject();
       }, 3000);
       watcher.watch(true, (err, res) => {
-        t.ok(res);
-        t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
+        assert.ok(res);
+        assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
@@ -372,18 +372,18 @@ test(`watch()`, async (t) => {
     });
   });
 
-  t.test(`watch dir from new dep`, async (t) => {
+  test(`watch dir from new dep`, async ({assert}) => {
     let counter = 0;
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       let rejectTimeout = setTimeout(() => {
         reject();
       }, 3000);
       watcher.watch(true, (err, res) => {
         if (counter === 0) {
           // to-watch1 changed
-          t.ok(res);
-          t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
-          t.is(
+          assert.ok(res);
+          assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
+          assert.equal(
             watcher
               .getDirsToWatch()
               .includes(
@@ -401,8 +401,8 @@ test(`watch()`, async (t) => {
           );
         } else {
           // a change from ts-node/dist
-          t.ok(res);
-          t.is(
+          assert.ok(res);
+          assert.equal(
             res!.affectedFile,
             Path.join(projectDPath, "../../../node_modules/ts-node/dist/foo.js")
           );
@@ -422,14 +422,14 @@ test(`watch()`, async (t) => {
     });
   });
 
-  t.test(`detect removed entry`, async (t) => {
-    return new Promise((resolve, reject) => {
+  test(`detect removed entry`, async ({assert}) => {
+    return new Promise<void>((resolve, reject) => {
       let rejectTimeout = setTimeout(() => {
         reject();
       }, 3000);
       watcher.watch(true, (err, res) => {
-        t.ok(res);
-        t.is(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
+        assert.ok(res);
+        assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
         clearTimeout(rejectTimeout);
         resolve(void 0);
       });
