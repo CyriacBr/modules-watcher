@@ -650,7 +650,7 @@ mod tests {
       .unwrap();
     std::fs::write(
       path_1,
-      format!("modified at: {}", since_the_epoch.as_millis()),
+      format!("modified at: {} // timestamp", since_the_epoch.as_millis()),
     )
     .unwrap();
     let changes = watcher.make_changes();
@@ -660,7 +660,7 @@ mod tests {
     // 4th call, we modify a dep
     std::fs::write(
       PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(),
-      format!("export const Z = {};", since_the_epoch.as_millis()),
+      format!("export const Z = {}; // timestamp", since_the_epoch.as_millis()),
     )
     .unwrap();
     let changes = watcher.make_changes();
@@ -678,7 +678,7 @@ mod tests {
     // 6h call, we restore z
     std::fs::write(
       PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(),
-      format!("export const Z = {};", since_the_epoch.as_millis()),
+      format!("export const Z = {}; // timestamp", since_the_epoch.as_millis()),
     )
     .unwrap();
     let changes = watcher.make_changes();
@@ -714,7 +714,7 @@ mod tests {
       .unwrap();
     std::fs::write(
       PROJECT_A_PATH.join("z2.js").to_str().unwrap().to_string(),
-      format!("export const Z = {};", since_the_epoch.as_millis()),
+      format!("export const Z = {} // timestamp;", since_the_epoch.as_millis()),
     )
     .unwrap();
     std::thread::sleep(std::time::Duration::from_secs(1));

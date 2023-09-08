@@ -365,7 +365,7 @@ test(`watch()`, async (t) => {
       });
       fs.writeFileSync(
         Path.join(projectDPath, "./file1.js"),
-        `export const FILE_1 = ${Date.now()};`
+        `export const FILE_1 = ${Date.now()}; // timestamp`
       );
     }).finally(() => {
       watcher.stopWatching();
