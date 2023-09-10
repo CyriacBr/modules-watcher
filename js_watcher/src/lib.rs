@@ -6,7 +6,6 @@ pub mod path_clean;
 pub mod entry;
 pub mod file_item;
 pub mod parser;
-pub mod watch_info;
 pub mod watcher;
 
 #[macro_use]

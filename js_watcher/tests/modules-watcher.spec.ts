@@ -124,23 +124,29 @@ test.group(`make_changes()`, async () => {
     }
     let changes = watcher.makeChanges();
 
-    assert.equal(changes.length, 3);
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch1.js") && !v.tree
-      )?.changeType,
-      "added"
-    );
-    assert.equal(
-      changes.find((v) => v.entry === Path.join(projectCPath, "./to-watch2.js"))
-        ?.changeType,
-      "added"
-    );
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch1.js") && v.tree
-      )?.changeType,
-      "dep-added"
+    assert.deepEqual(changes,
+        [
+          {
+            changeType: 'Added',
+            entry: Path.join(projectCPath, "./to-watch1.js"),
+          },
+          {
+            changeType: 'DepAdded',
+            entry: Path.join(projectCPath, "./to-watch1.js"),
+            cause: {
+              file: Path.join(projectCPath, "./file1.js"),
+              state: 'Created',
+            },
+            tree: [
+              Path.join(projectCPath, "./file1.js"),
+              Path.join(projectCPath, "./to-watch1.js")
+            ]
+          },
+          {
+            changeType: 'Added',
+            entry: Path.join(projectCPath, "./to-watch2.js"),
+          }
+        ]
     );
   });
 
@@ -148,10 +154,14 @@ test.group(`make_changes()`, async () => {
     fs.writeFileSync(Path.join(projectCPath, "./to-watch3.js"), "");
 
     let changes = watcher.makeChanges();
-
-    assert.equal(changes.length, 1);
-    assert.equal(changes[0].entry, Path.join(projectCPath, "./to-watch3.js"));
-    assert.equal(changes[0].changeType, "added");
+    assert.deepEqual(changes,
+        [
+            {
+                changeType: 'Added',
+                entry: Path.join(projectCPath, "./to-watch3.js"),
+            },
+        ],
+    );
   });
 
   test(`modifications on entries are detected`, async ({assert}) => {
@@ -161,10 +171,14 @@ test.group(`make_changes()`, async () => {
     );
 
     let changes = watcher.makeChanges();
-
-    assert.equal(changes.length, 1);
-    assert.equal(changes[0].entry, Path.join(projectCPath, "./to-watch3.js"));
-    assert.equal(changes[0].changeType, "modified");
+    assert.deepEqual(changes,
+        [
+          {
+            changeType: 'Modified',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+          },
+        ],
+    );
   });
 
   test(`new deps from existing files are detected`, async ({assert}) => {
@@ -174,19 +188,25 @@ test.group(`make_changes()`, async () => {
     );
 
     let changes = watcher.makeChanges();
-
-    assert.equal(changes.length, 2);
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && !v.tree
-      )?.changeType,
-      "modified"
-    );
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
-      )?.changeType,
-      "dep-added"
+    assert.deepEqual(changes,
+        [
+          {
+            changeType: 'Modified',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+          },
+          {
+            changeType: 'DepAdded',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+            cause: {
+              file: Path.join(projectCPath, "./file2.js"),
+              state: 'Created',
+            },
+            tree: [
+              Path.join(projectCPath, "./file2.js"),
+              Path.join(projectCPath, "./to-watch3.js")
+            ]
+          }
+        ],
     );
   });
 
@@ -201,19 +221,25 @@ test.group(`make_changes()`, async () => {
     );
 
     let changes = watcher.makeChanges();
-
-    assert.equal(changes.length, 2);
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && !v.tree
-      )?.changeType,
-      "modified"
-    );
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
-      )?.changeType,
-      "dep-added"
+    assert.deepEqual(changes,
+        [
+          {
+            changeType: 'Modified',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+          },
+          {
+            changeType: 'DepAdded',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+            cause: {
+              file: Path.join(projectCPath, "./file3.js"),
+              state: 'Created',
+            },
+            tree: [
+              Path.join(projectCPath, "./file3.js"),
+              Path.join(projectCPath, "./to-watch3.js")
+            ]
+          }
+        ],
     );
   });
 
@@ -224,13 +250,21 @@ test.group(`make_changes()`, async () => {
     );
 
     let changes = watcher.makeChanges();
-
-    assert.equal(changes.length, 1);
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
-      )?.changeType,
-      "dep-modified"
+    assert.deepEqual(changes,
+        [
+          {
+            changeType: 'DepModified',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+            cause: {
+              file: Path.join(projectCPath, "./file3.js"),
+              state: 'Modified',
+            },
+            tree: [
+              Path.join(projectCPath, "./file3.js"),
+              Path.join(projectCPath, "./to-watch3.js")
+            ]
+          },
+        ],
     );
   });
 
@@ -238,13 +272,21 @@ test.group(`make_changes()`, async () => {
     fs.unlinkSync(Path.join(projectCPath, "./file3.js"));
 
     let changes = watcher.makeChanges();
-
-    assert.equal(changes.length, 1);
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
-      )?.changeType,
-      "dep-deleted"
+    assert.deepEqual(changes,
+        [
+          {
+            changeType: 'DepDeleted',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+            cause: {
+              file: Path.join(projectCPath, "./file3.js"),
+              state: 'Deleted',
+            },
+            tree: [
+              Path.join(projectCPath, "./file3.js"),
+              Path.join(projectCPath, "./to-watch3.js")
+            ]
+          },
+        ],
     );
   });
 
@@ -255,13 +297,21 @@ test.group(`make_changes()`, async () => {
     );
 
     let changes = watcher.makeChanges();
-
-    assert.equal(changes.length, 1);
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && v.tree
-      )?.changeType,
-      "dep-added"
+    assert.deepEqual(changes,
+        [
+          {
+            changeType: 'DepAdded',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+            cause: {
+              file: Path.join(projectCPath, "./file3.js"),
+              state: 'Created',
+            },
+            tree: [
+                Path.join(projectCPath, "./file3.js"),
+                Path.join(projectCPath, "./to-watch3.js")
+            ]
+          },
+        ],
     );
 
     fs.unlinkSync(Path.join(projectCPath, "./file3.js"));
@@ -272,13 +322,13 @@ test.group(`make_changes()`, async () => {
     fs.unlinkSync(Path.join(projectCPath, "./to-watch3.js"));
 
     let changes = watcher.makeChanges();
-
-    assert.equal(changes.length, 1);
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && !v.tree
-      )?.changeType,
-      "deleted"
+    assert.deepEqual(changes,
+        [
+          {
+            changeType: 'Deleted',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+          },
+        ],
     );
   });
 
@@ -289,13 +339,13 @@ test.group(`make_changes()`, async () => {
     );
 
     let changes = watcher.makeChanges();
-
-    assert.equal(changes.length, 1);
-    assert.equal(
-      changes.find(
-        (v) => v.entry === Path.join(projectCPath, "./to-watch3.js") && !v.tree
-      )?.changeType,
-      "added"
+    assert.deepEqual(changes,
+        [
+          {
+            changeType: 'Added',
+            entry: Path.join(projectCPath, "./to-watch3.js"),
+          },
+        ],
     );
 
     fs.unlinkSync(Path.join(projectCPath, "./to-watch3.js"));
@@ -303,7 +353,10 @@ test.group(`make_changes()`, async () => {
   });
 });
 
-test.group(`watch()`, async () => {
+test.group(`watch()`, async (group) => {
+  if (fs.existsSync(Path.join(projectDPath, "./to-watch1.js"))) {
+    fs.unlinkSync(Path.join(projectDPath, "./to-watch1.js"));
+  }
   let watcher = ModulesWatcher.setup({
     project: "d",
     projectRoot: projectDPath,
@@ -313,129 +366,153 @@ test.group(`watch()`, async () => {
     fs.rmSync(watcher.cacheDir(), { recursive: true });
   }
 
-  test(`detect new entries`, async ({assert}) => {
-    return new Promise<void>((resolve, reject) => {
-      let rejectTimeout = setTimeout(() => {
-        reject();
-      }, 3000);
-      watcher.watch(true, (err, res) => {
-        assert.ok(res);
-        assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
-        clearTimeout(rejectTimeout);
-        resolve(void 0);
-      });
-      fs.writeFileSync(Path.join(projectDPath, "./to-watch1.js"), "");
-    }).finally(() => {
-      watcher.stopWatching();
-    });
+  group.each.setup(() => {
+    watcher.makeChanges();
+  });
+  group.each.teardown(() => {
+    watcher.stopWatching();
   });
 
-  test(`detect new dep from existing file`, async ({assert}) => {
-    return new Promise<void>((resolve, reject) => {
-      let rejectTimeout = setTimeout(() => {
-        reject();
-      }, 3000);
-      watcher.watch(true, (err, res) => {
-        assert.ok(res);
-        assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
-        assert.equal(res!.affectedEntries![0].deps.length, 1);
-        assert.equal(res!.affectedEntries![0].deps[0], Path.join(projectDPath, "./file1.js"));
-        clearTimeout(rejectTimeout);
-        resolve(void 0);
-      });
-      fs.writeFileSync(
+  test(`detect new entries`, ({assert}, done) => {
+    watcher.watch((err, res) => {
+      assert.deepEqual(res, [
+        {
+          changeType: "Added",
+          entry: Path.join(projectDPath, "./to-watch1.js"),
+        }
+      ]);
+      done();
+    });
+    fs.writeFileSync(Path.join(projectDPath, "./to-watch1.js"), "");
+  }).waitForDone();
+
+  test(`detect new dep from existing file`, ({assert}, done) => {
+    watcher.watch((err, res) => {
+      assert.deepEqual(res, [
+        {
+          changeType: "Modified",
+          entry: Path.join(projectDPath, "./to-watch1.js"),
+        },
+        {
+          changeType: "DepAdded",
+          entry: Path.join(projectDPath, "./to-watch1.js"),
+          cause: {
+            file: Path.join(projectDPath, "./file1.js"),
+            state: "Created",
+          },
+          tree: [Path.join(projectDPath, "./file1.js"), Path.join(projectDPath, "./to-watch1.js")]
+        }
+      ]);
+      assert.ok(res);
+      done();
+    });
+    fs.writeFileSync(
         Path.join(projectDPath, "./to-watch1.js"),
         "import * as foo from './file1'"
-      );
-    }).finally(() => {
-      watcher.stopWatching();
-    });
-  });
+    );
+  }).waitForDone();
 
-  test(`detect modified dep`, async ({assert}) => {
-    return new Promise<void>((resolve, reject) => {
-      let rejectTimeout = setTimeout(() => {
-        reject();
-      }, 3000);
-      watcher.watch(true, (err, res) => {
-        assert.ok(res);
-        assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
-        clearTimeout(rejectTimeout);
-        resolve(void 0);
-      });
-      fs.writeFileSync(
+  test(`detect modified dep`, ({assert}, done) => {
+    watcher.watch((err, res) => {
+      assert.deepEqual(res, [
+        {
+          changeType: "DepModified",
+          entry: Path.join(projectDPath, "./to-watch1.js"),
+          cause: {
+            file: Path.join(projectDPath, "./file1.js"),
+            state: "Modified",
+          },
+          tree: [Path.join(projectDPath, "./file1.js"), Path.join(projectDPath, "./to-watch1.js")]
+        }
+      ]);
+      done();
+    });
+    fs.writeFileSync(
         Path.join(projectDPath, "./file1.js"),
         `export const FILE_1 = ${Date.now()}; // timestamp`
-      );
-    }).finally(() => {
-      watcher.stopWatching();
-    });
-  });
+    );
+  }).waitForDone();
 
-  test(`watch dir from new dep`, async ({assert}) => {
-    let counter = 0;
-    return new Promise<void>((resolve, reject) => {
-      let rejectTimeout = setTimeout(() => {
-        reject();
-      }, 3000);
-      watcher.watch(true, (err, res) => {
-        if (counter === 0) {
-          // to-watch1 changed
-          assert.ok(res);
-          assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
-          assert.equal(
+  test(`watch dir from new dep`, ({assert}, done) => {
+    let phase = 0;
+    let oldTsNodeContent = '';
+    watcher.watch((err, res) => {
+      if (phase === 0) {
+        // to-watch1 changed
+        assert.deepEqual(res, [
+          {
+            changeType: "Modified",
+            entry: Path.join(projectDPath, "./to-watch1.js"),
+          },
+          {
+            changeType: "DepAdded",
+            entry: Path.join(projectDPath, "./to-watch1.js"),
+            cause: {
+              file: Path.join(projectDPath, "../../../node_modules/ts-node/dist/index.js"),
+              state: "Created",
+            },
+            tree: [
+                Path.join(projectDPath, "../../../node_modules/ts-node/dist/index.js"),
+                Path.join(projectDPath, "./to-watch1.js")
+            ]
+          },
+        ]);
+        assert.ok(
             watcher
-              .getDirsToWatch()
-              .includes(
-                Path.join(projectDPath, "../../../node_modules/ts-node/dist")
-              ),
-            true
-          );
-          counter++;
-          fs.writeFileSync(
-            Path.join(
-              projectDPath,
-              "../../../node_modules/ts-node/dist/foo.js"
-            ),
-            ""
-          );
-        } else {
-          // a change from ts-node/dist
-          assert.ok(res);
-          assert.equal(
-            res!.affectedFile,
-            Path.join(projectDPath, "../../../node_modules/ts-node/dist/foo.js")
-          );
-          clearTimeout(rejectTimeout);
-          resolve(void 0);
-        }
-      });
-      fs.writeFileSync(
+                .getDirsToWatch()
+                .includes(
+                    Path.join(projectDPath, "../../../node_modules/ts-node/dist")
+                ),
+        );
+        phase++;
+        oldTsNodeContent = fs.readFileSync(
+            Path.join(projectDPath, "../../../node_modules/ts-node/dist/index.js"),
+            'utf-8'
+        );
+        fs.writeFileSync(
+            Path.join(projectDPath, "../../../node_modules/ts-node/dist/index.js"),
+            "module.exports = 1;"
+        );
+      } else if(phase === 1) {
+        // a change from ts-node
+        assert.deepEqual(res, [
+          {
+            changeType: "DepModified",
+            entry: Path.join(projectDPath, "./to-watch1.js"),
+            cause: {
+              file: Path.join(projectDPath, "../../../node_modules/ts-node/dist/index.js"),
+              state: "Modified",
+            },
+            tree: [
+                Path.join(projectDPath, "../../../node_modules/ts-node/dist/index.js"),
+                Path.join(projectDPath, "./to-watch1.js")
+            ]
+          }
+        ]);
+        phase++;
+        fs.writeFileSync(
+            Path.join(projectDPath, "../../../node_modules/ts-node/dist/index.js"),
+            oldTsNodeContent
+        );
+        done();
+      }
+    });
+    fs.writeFileSync(
         Path.join(projectDPath, "./to-watch1.js"),
         "import * as ts from 'ts-node'"
-      );
-    }).finally(() => {
-      watcher.stopWatching();
-      fs.unlinkSync(
-        Path.join(projectDPath, "../../../node_modules/ts-node/dist/foo.js")
-      );
-    });
-  });
+    );
+  }).waitForDone();
 
-  test(`detect removed entry`, async ({assert}) => {
-    return new Promise<void>((resolve, reject) => {
-      let rejectTimeout = setTimeout(() => {
-        reject();
-      }, 3000);
-      watcher.watch(true, (err, res) => {
-        assert.ok(res);
-        assert.equal(res!.affectedEntries![0].path, Path.join(projectDPath, "./to-watch1.js"));
-        clearTimeout(rejectTimeout);
-        resolve(void 0);
-      });
-      fs.unlinkSync(Path.join(projectDPath, "./to-watch1.js"));
-    }).finally(() => {
-      watcher.stopWatching();
+  test(`detect removed entry`, ({assert}, done) => {
+    watcher.watch((err, res) => {
+      assert.deepEqual(res, [
+        {
+          changeType: "Deleted",
+          entry: Path.join(projectDPath, "./to-watch1.js"),
+        }
+      ]);
+      done();
     });
-  });
-});
+    fs.unlinkSync(Path.join(projectDPath, "./to-watch1.js"));
+  }).waitForDone();
+ });

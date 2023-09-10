@@ -2,17 +2,18 @@ use crate::entry::{
   make_entries, make_file_item, make_missing_entries, MakeEntriesOptions, SupportedPaths,
 };
 use crate::file_item::FileItem;
-use crate::watch_info::WatchInfo;
 use dashmap::DashMap;
+use napi::bindgen_prelude::*;
 use napi::threadsafe_function::{
   ErrorStrategy, ThreadSafeCallContext, ThreadsafeFunction, ThreadsafeFunctionCallMode,
 };
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc::TryRecvError;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::{
   collections::HashMap,
   io::{BufRead, BufReader},
@@ -33,14 +34,33 @@ pub struct SetupOptions {
 
 #[napi(object)]
 #[derive(Clone)]
+pub struct EntryChangeCause {
+  pub file: String,
+  pub state: FileState,
+}
+
+#[napi(object)]
+#[derive(Clone)]
 pub struct EntryChange {
-  // TODO: use Enum
-  pub change_type: String,
+  pub change_type: EntryChangeType,
   pub entry: String,
+  pub cause: Option<EntryChangeCause>,
   pub tree: Option<Vec<String>>,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[napi(string_enum)]
+#[derive(PartialEq, Debug)]
+pub enum EntryChangeType {
+  Added,
+  DepAdded,
+  Modified,
+  DepModified,
+  Deleted,
+  DepDeleted,
+}
+
+#[napi(string_enum)]
+#[derive(PartialEq, Debug)]
 pub enum FileState {
   NotModified,
   Modified,
@@ -133,7 +153,7 @@ impl WatcherInner {
       .collect()
   }
 
-  fn update_store(&mut self) {
+  fn update_store_with_missing_entries(&mut self) {
     let opts = &self.setup_options;
     let entries_vec = opts.entries.clone().unwrap_or_default();
     let project_root = (&opts.project_root).to_string();
@@ -236,24 +256,24 @@ impl WatcherInner {
     let old_checksum_store = self.get_checksums_cache();
     let new_checksum_store: DashMap<String, i64> = DashMap::new();
 
-    self.update_store();
+    self.update_store_with_missing_entries();
 
     let changes: Vec<EntryChange> = self
       .entries
       .par_iter()
-      .map(|x| {
+      .map(|entry| {
         // for each entry
 
         // we update entry deps if the file got modified
-        let entry_path = x.path.to_str().unwrap();
+        let entry_path = entry.path.to_str().unwrap();
         let (entry_checksum, entry_state) = self.get_file_state(entry_path, &old_checksum_store);
-        let mut deps = x.deps.iter().map(String::from).collect();
+        let mut deps = entry.deps.iter().map(String::from).collect();
         if entry_state == FileState::Modified {
           deps = self.make_file_deps(entry_path);
         }
 
         let mut tree: Vec<String> = Vec::new();
-        let mut files = vec![x.path.to_str().unwrap().to_string()];
+        let mut files = vec![entry.path.to_str().unwrap().to_string()];
         files.extend(deps.into_iter());
         // collect changes for each deps (entry included) of the current entry
         let entry_changes: Vec<Option<EntryChange>> = files
@@ -273,33 +293,57 @@ impl WatcherInner {
               FileState::Deleted => {
                 return Some(EntryChange {
                   change_type: if is_entry {
-                    "deleted".to_string()
+                    EntryChangeType::Deleted
                   } else {
-                    "dep-deleted".to_string()
+                    EntryChangeType::DepDeleted
                   },
-                  entry: x.path.to_str().unwrap().to_string(),
+                  entry: entry.path.to_str().unwrap().to_string(),
+                  cause: if is_entry {
+                    None
+                  } else {
+                    Some(EntryChangeCause {
+                      file: dep.to_string(),
+                      state,
+                    })
+                  },
                   tree: if is_entry { None } else { Some(tree.clone()) },
                 });
               }
               FileState::Created => {
                 return Some(EntryChange {
                   change_type: if is_entry {
-                    "added".to_string()
+                    EntryChangeType::Added
                   } else {
-                    "dep-added".to_string()
+                    EntryChangeType::DepAdded
                   },
-                  entry: x.path.to_str().unwrap().to_string(),
+                  entry: entry.path.to_str().unwrap().to_string(),
+                  cause: if is_entry {
+                    None
+                  } else {
+                    Some(EntryChangeCause {
+                      file: dep.to_string(),
+                      state,
+                    })
+                  },
                   tree: if is_entry { None } else { Some(tree.clone()) },
                 });
               }
               FileState::Modified => {
                 return Some(EntryChange {
                   change_type: if is_entry {
-                    "modified".to_string()
+                    EntryChangeType::Modified
                   } else {
-                    "dep-modified".to_string()
+                    EntryChangeType::DepModified
                   },
-                  entry: x.path.to_str().unwrap().to_string(),
+                  entry: entry.path.to_str().unwrap().to_string(),
+                  cause: if is_entry {
+                    None
+                  } else {
+                    Some(EntryChangeCause {
+                      file: dep.to_string(),
+                      state,
+                    })
+                  },
                   tree: if is_entry { None } else { Some(tree.clone()) },
                 });
               }
@@ -399,158 +443,67 @@ impl Watcher {
     self.inner.lock().unwrap().get_dirs_to_watch()
   }
 
-  pub fn watch<F>(&mut self, retrieve_entries: bool, on_event: F)
+  pub fn watch<F>(&mut self, on_event: F)
   where
-    F: Fn(WatchInfo) -> Result<(), ()> + std::marker::Sync + std::marker::Send + 'static,
+    F: Fn(Vec<EntryChange>) -> Result<(), String> + std::marker::Sync + std::marker::Send + 'static,
   {
-    use notify::{watcher, DebouncedEvent, RecursiveMode, Watcher};
-    use std::sync::mpsc::channel;
-
-    let paths = self.get_dirs_to_watch();
-
     let flag = self.stop_watch_flag.clone();
     let on_event_arced = Arc::new(on_event);
     let inner = self.inner.clone();
 
-    let (main_tx, main_rx) = channel();
+    /**
+     * Spawn a thread to poll for changes.
+     * We're using a poller because watching for file system changes is unreliable
+     * across platforms.
+     * See https://github.com/notify-rs/notify/issues/465 and https://github.com/notify-rs/notify/issues/468
+     **/
     std::thread::spawn(move || {
-      // let mut mutself =  inner.lock().unwrap();
-
-      let (tx, rx) = channel();
-      let mut watcher = watcher(tx, std::time::Duration::from_millis(200)).unwrap();
-
-      for path in &paths {
-        watcher.watch(&path, RecursiveMode::Recursive).unwrap();
-      }
-
       let on_event_cb = on_event_arced.clone();
-      let mut event_handler = |path: PathBuf, event: notify::DebouncedEvent| {
-        let mut mutself = inner.lock().unwrap();
-        let path_str = path.to_str().unwrap();
-        let mut need_watch_refresh = false;
-        match event {
-          DebouncedEvent::Create(_) | DebouncedEvent::Rename(_, _) => {
-            if path.as_path().is_file() {
-              mutself.update_store();
-              mutself.update_entries_from_store();
-              need_watch_refresh = true;
-            }
-          }
-          DebouncedEvent::Write(_) => {
-            if mutself.store.contains_key(path_str) {
-              let duration = std::time::Instant::now();
-              mutself.make_file_deps(path_str);
-              mutself.update_entries_from_store();
-              need_watch_refresh = true;
-              if mutself.debug {
-                println!(
-                  "[Watcher::watch] write handling ({}ms)",
-                  duration.elapsed().as_millis()
-                );
-              }
-            }
-          }
-          _ => {}
-        }
-        // If deps changed, we need to watch new dir paths from them
-        if need_watch_refresh {
-          let duration = std::time::Instant::now();
-          mutself.get_dirs_to_watch().iter().for_each(|x| {
-            // watcher.unwatch(x).ok();
-            watcher.watch(x, RecursiveMode::Recursive).unwrap();
-          });
-          if mutself.debug {
-            println!(
-              "[Watcher::watch] watch refreshed ({}ms)",
-              duration.elapsed().as_millis()
-            );
-          }
-        }
-
-        let info = WatchInfo {
-          event,
-          affected_file: String::from(path_str),
-          affected_entries: if !retrieve_entries {
-            None
-          } else {
-            let maybe_item = mutself.store.get(path_str).map(|x| x.value().clone_item());
-            if let Some(item) = maybe_item {
-              if mutself.debug {
-                println!("[Watcher::watch] looking for entries of {:#?}", item);
-              }
-              let entries = mutself.get_entries_from_item(&item);
-              Some(entries.into_iter().map(|x| x.clone_item()).collect())
-            } else {
-              None
-            }
-          },
-        };
-
-        drop(mutself); // unlocl mutex so watcher can be used inside callback
-        on_event_cb(info).unwrap();
-      };
-
-      // notify that watching started
-      main_tx.send(1).unwrap();
       loop {
         if flag.load(Ordering::Relaxed) {
           flag.store(false, Ordering::Relaxed);
-          for path in &paths {
-            watcher.unwatch(path).unwrap();
-          }
           break;
         }
-        match rx.try_recv() {
-          Ok(event) => {
-            let mutself = inner.lock().unwrap();
-            if mutself.debug {
-              println!("[Watcher::watch] event: {:?}", event);
-            }
-            drop(mutself);
-            match &event {
-              DebouncedEvent::Write(path)
-              | DebouncedEvent::Create(path)
-              | DebouncedEvent::Remove(path) => {
-                event_handler(path.to_path_buf(), event);
-              }
-              DebouncedEvent::Rename(before, after) => {
-                let mutself = inner.lock().unwrap();
-                mutself.remove_dep(before.to_str().unwrap());
-                drop(mutself);
-                event_handler(after.to_path_buf(), event);
-              }
-              _ => {}
-            }
-          }
-          Err(TryRecvError::Empty) => {}
-          Err(e) => panic!("a watch error occurred: {:?}", e),
+        let mut mutself = inner.lock().unwrap();
+        let changes = mutself.make_changes();
+        drop(mutself);
+        if !changes.is_empty() {
+          on_event_cb(changes).unwrap();
         }
+        std::thread::sleep(Duration::from_millis(250));
       }
     });
     // listening...
-    // wait for watching to start
-    main_rx.recv().unwrap();
   }
 
   #[napi]
   pub fn stop_watching(&self) {
     self.stop_watch_flag.store(true, Ordering::Relaxed);
+    // wait for watching to stop
+    loop {
+      if !self.stop_watch_flag.load(Ordering::Relaxed) {
+        break;
+      }
+    }
   }
 
   #[napi(
     js_name = "watch",
-    ts_args_type = "retrieve_entries: boolean, callback: (err: null | Error, result: null | WatchInfo) => void"
+    ts_args_type = "callback: (err: null | Error, result: EntryChange[]) => void"
   )]
-  pub fn napi_watch(&mut self, retrieve_entries: bool, callback: napi::JsFunction) {
-    let tsfn: ThreadsafeFunction<WatchInfo, ErrorStrategy::CalleeHandled> = callback
-      .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<WatchInfo>| {
-        let info = ctx.value;
-        let obj = info.to_napi_obj(ctx.env).unwrap();
-        return Ok(vec![obj]);
+  pub fn napi_watch(&mut self, callback: napi::JsFunction) {
+    let tsfn: ThreadsafeFunction<Vec<EntryChange>, ErrorStrategy::CalleeHandled> = callback
+      .create_threadsafe_function(0, |ctx: ThreadSafeCallContext<Vec<EntryChange>>| {
+        let changes = ctx.value;
+        let mut napi_array = ctx.env.create_array(changes.len() as u32).unwrap();
+        for (i, change) in changes.into_iter().enumerate() {
+          napi_array.set(i as u32, change).unwrap();
+        }
+        return Ok(vec![napi_array]);
       })
       .unwrap();
 
-    self.watch(retrieve_entries, move |item| {
+    self.watch(move |item| {
       tsfn.call(Ok(item), ThreadsafeFunctionCallMode::Blocking);
       Ok(())
     })
@@ -559,7 +512,7 @@ impl Watcher {
 
 #[cfg(test)]
 mod tests {
-  use crate::watcher::{SetupOptions, Watcher};
+  use crate::watcher::{EntryChangeType, SetupOptions, Watcher};
   use lazy_static::lazy_static;
   use std::path::PathBuf;
   use std::sync::atomic::{AtomicBool, Ordering};
@@ -636,9 +589,9 @@ mod tests {
     }
     let changes = watcher.make_changes();
     assert_eq!(changes.len(), 3);
-    assert_eq!(changes[0].change_type, "added".to_string());
-    assert_eq!(changes[1].change_type, "added".to_string());
-    assert_eq!(changes[2].change_type, "dep-added".to_string());
+    assert_eq!(changes[0].change_type, EntryChangeType::Added);
+    assert_eq!(changes[1].change_type, EntryChangeType::Added);
+    assert_eq!(changes[2].change_type, EntryChangeType::DepAdded);
 
     // Second call, we expect no changes
     let changes = watcher.make_changes();
@@ -655,35 +608,41 @@ mod tests {
     .unwrap();
     let changes = watcher.make_changes();
     assert_eq!(changes.len(), 1);
-    assert_eq!(changes[0].change_type, "modified".to_string());
+    assert_eq!(changes[0].change_type, EntryChangeType::Modified);
 
     // 4th call, we modify a dep
     std::fs::write(
       PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(),
-      format!("export const Z = {}; // timestamp", since_the_epoch.as_millis()),
+      format!(
+        "export const Z = {}; // timestamp",
+        since_the_epoch.as_millis()
+      ),
     )
     .unwrap();
     let changes = watcher.make_changes();
     assert_eq!(changes.len(), 1);
-    assert_eq!(changes[0].change_type, "dep-modified".to_string());
+    assert_eq!(changes[0].change_type, EntryChangeType::DepModified);
     assert_eq!(changes[0].entry, path_2);
 
     // 5th call, we remove z
     std::fs::remove_file(PROJECT_A_PATH.join("z.js")).unwrap();
     let changes = watcher.make_changes();
     assert_eq!(changes.len(), 1);
-    assert_eq!(changes[0].change_type, "dep-deleted".to_string());
+    assert_eq!(changes[0].change_type, EntryChangeType::DepDeleted);
     assert_eq!(changes[0].entry, path_2);
 
     // 6h call, we restore z
     std::fs::write(
       PROJECT_A_PATH.join("z.js").to_str().unwrap().to_string(),
-      format!("export const Z = {}; // timestamp", since_the_epoch.as_millis()),
+      format!(
+        "export const Z = {}; // timestamp",
+        since_the_epoch.as_millis()
+      ),
     )
     .unwrap();
     let changes = watcher.make_changes();
     assert_eq!(changes.len(), 1);
-    assert_eq!(changes[0].change_type, "dep-added".to_string());
+    assert_eq!(changes[0].change_type, EntryChangeType::DepAdded);
     assert_eq!(changes[0].entry, path_2);
   }
 
@@ -703,7 +662,7 @@ mod tests {
 
     let called = Arc::new(AtomicBool::new(false)).clone();
     let called_thread = called.clone();
-    watcher.watch(true, move |_| {
+    watcher.watch(move |_| {
       called_thread.store(true, Ordering::Relaxed);
       Ok(())
     });
@@ -714,7 +673,10 @@ mod tests {
       .unwrap();
     std::fs::write(
       PROJECT_A_PATH.join("z2.js").to_str().unwrap().to_string(),
-      format!("export const Z = {} // timestamp;", since_the_epoch.as_millis()),
+      format!(
+        "export const Z = {} // timestamp;",
+        since_the_epoch.as_millis()
+      ),
     )
     .unwrap();
     std::thread::sleep(std::time::Duration::from_secs(1));

@@ -120,9 +120,8 @@ jobs:
       fail-fast: false
       matrix:
         settings:
-          # TODO: fix tests on MacOS
-          #- host: macos-latest
-          #  target: x86_64-apple-darwin
+          - host: macos-latest
+            target: x86_64-apple-darwin
           - host: windows-latest
             target: x86_64-pc-windows-msvc
         node:

@@ -44,16 +44,27 @@ Then, you can either:
 
 `makeChanges()` will return changes based on the cache and the current checksum of the dependency tree of your entries.  
 This means that changes that occurred when `modules-watcher` wasn't running will be picked up.  
-The first time this method is called (there's no cache yet), every entry will be marked as `added`.
+The first time this method is called (there's no cache yet), every entry will be marked as `Added`.
 
 ```ts
 const changes = watcher.makeChanges();
-changes[0]; // { changeType: 'added', entry: 'path/foo.mdx' }
+changes[0];
+/**
+ * {
+ *    changeType: 'Added',
+ *    entry: 'path/foo.mdx',
+ * }
+ **/
+
 changes[1];
 /**
  * {
- *    changeType: 'dep-added',
+ *    changeType: 'DepAdded',
  *    entry: 'path/foo.mdx',
+ *    cause: {
+ *      file: 'path/foo-component.js',
+ *      state: 'Created',
+ *    }
  *    tree: ['path/foo-component.js', 'path/foo.mdx'] 
  * }
  **/
@@ -71,32 +82,44 @@ const changes = watcher.makeChanges();
 changes[0];
 /**
  * {
- *    changeType: 'dep-modified',
+ *    changeType: 'DepModified',
  *    entry: 'path/foo.mdx',
+ *    cause: {
+ *      file: 'path/foo-component.js',
+ *      state: 'Modified',
+ *    }
  *    tree: ['path/foo-component.js', 'path/foo.mdx'] 
  * }
  **/
-changes[1]; // { changeType: 'modified', entry: 'path/bar.mdx' }
-changes[2]; // { changeType: 'deleted', entry: 'path/baz.mdx' }
+
+changes[1];
+/**
+ * {
+ *    changeType: 'Added',
+ *    entry: 'path/bar.mdx',
+ * }
+ **/
+
+changes[2];
+/**
+ * {
+ *    changeType: 'Deleted',
+ *    entry: 'path/baz.mdx',
+ * }
+ **/
 ```
-Based on `changeType`, it's possible to know if an entry was directly modified or if its dependencies are the ones that changed.  
-Naturally, if an entry is modified with a new import statement, you'll get a change with `dep-added` for that entry.
+Based on `changeType` and `cause`, it's possible to know if an entry was directly modified or if its dependencies are the ones that changed.  
+Naturally, if an entry is modified with a new import statement, you'll get a change with `DepAdded` for that entry.
 
 ### Actively watching for changes
 
-The method `watch` lets you watch in real-time any mdofication to your entries or their dependencies. `watch` takes a parameter to specify if the change types should be resolved. If you do not need the specific changes that happened, set that parameter to `false`. Getting changes from `watch` requires some computations, this is why it is gated behind a parameter.  
+The method `watch` lets you watch in real-time any modification to your entries or their dependencies.   
+The callback to `watch` is called with the result of `makeChanges` every time a change is detected.
 Use `stopWatch` to stop watching.
 
 ```ts
-watcher.watch(false, (err) => {
-    // down the road, this function calls makeChanges()
-    generateDocs();
-});
-
-// or
-watcher.watch(true, (err, entries) => {
-    // we care about what specifically changed
-    if (entries.some(e => e.entry === 'path/config.ts')) {
+watcher.watch((err, changes) => {
+    if (!err && changes.some(change => change.entry === 'path/config.ts')) {
       fullReload();
     }
 });
