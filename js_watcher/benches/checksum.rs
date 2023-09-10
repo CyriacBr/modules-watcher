@@ -10,7 +10,7 @@ use std::{
 use wyhash::WyHash;
 
 lazy_static! {
-  static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
+  static ref CWD: PathBuf = std::env::current_dir().unwrap();
   static ref THREEJS_PATH: PathBuf = CWD.join("tests/fixtures/three_js");
   static ref FILE_A: PathBuf = CWD
     .join("tests")
@@ -54,7 +54,7 @@ fn bench_bufreader(c: &mut Criterion) {
       let file = File::open(FILE_A.as_path()).unwrap();
       let mut reader = BufReader::new(file);
       let bytes = reader.fill_buf().unwrap();
-      crc32fast::hash(&bytes);
+      crc32fast::hash(bytes);
     });
   });
 }
@@ -65,7 +65,7 @@ fn bench_bufreader_with_capacity(c: &mut Criterion) {
       let file = File::open(FILE_A.as_path()).unwrap();
       let mut reader = BufReader::with_capacity(file.metadata().unwrap().len() as usize + 1, file);
       let bytes = reader.fill_buf().unwrap();
-      crc32fast::hash(&bytes);
+      crc32fast::hash(bytes);
     });
   });
 }

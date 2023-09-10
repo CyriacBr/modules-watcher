@@ -148,8 +148,7 @@ pub fn parse_deps(input: &str, conditions: ParseConditions) -> Vec<ImportDep> {
 
   res
     .into_iter()
-    .map(|(_, path)| path)
-    .flatten()
+    .filter_map(|(_, path)| path)
     .flatten()
     .collect()
 }
@@ -194,7 +193,9 @@ mod tests {
       }
       // unnamed
       {
-        let (_, path) = parse_esm_statement(&(word.to_owned() + " 'foo.js'")).ok().unwrap();
+        let (_, path) = parse_esm_statement(&(word.to_owned() + " 'foo.js'"))
+          .ok()
+          .unwrap();
         assert_eq!(path, vec![ImportDep::ESM("foo.js".to_string())]);
       }
     }

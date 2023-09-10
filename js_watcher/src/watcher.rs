@@ -10,7 +10,6 @@ use napi::threadsafe_function::{
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -156,7 +155,7 @@ impl WatcherInner {
   fn update_store_with_missing_entries(&mut self) {
     let opts = &self.setup_options;
     let entries_vec = opts.entries.clone().unwrap_or_default();
-    let project_root = (&opts.project_root).to_string();
+    let project_root = opts.project_root.to_string();
     let globs_vec = opts.glob_entries.clone().unwrap_or_default();
     let entry_paths: Vec<PathBuf> = entries_vec.iter().map(PathBuf::from).collect();
     let entry_globs: Vec<&str> = globs_vec.iter().map(|x| &x[..]).collect();
@@ -175,7 +174,7 @@ impl WatcherInner {
     self.entries = self
       .entries
       .iter()
-      .map(|x| {
+      .filter_map(|x| {
         let key = x.path.to_str().unwrap();
         if let Some(item) = self.store.get(key) {
           let mut res_item = item.clone_item();
@@ -184,7 +183,6 @@ impl WatcherInner {
         }
         None
       })
-      .flatten()
       .collect();
   }
 
@@ -284,7 +282,7 @@ impl WatcherInner {
             let is_entry = i == 0;
             // Try to determine if the file changed
             let (checksum, state) = if is_entry {
-              (entry_checksum, entry_state.clone())
+              (entry_checksum, entry_state)
             } else {
               self.get_file_state(dep, &old_checksum_store)
             };
@@ -377,7 +375,7 @@ impl WatcherInner {
       }
       return (-1, FileState::Deleted);
     }
-    let content = std::fs::read_to_string(&file_path).unwrap();
+    let content = std::fs::read_to_string(file_path).unwrap();
     let curr_checksum = crc32fast::hash(content.as_bytes()) as i64;
     if let Some(old_value) = checksum_store.get(file_path) {
       if curr_checksum == *old_value {
@@ -499,7 +497,7 @@ impl Watcher {
         for (i, change) in changes.into_iter().enumerate() {
           napi_array.set(i as u32, change).unwrap();
         }
-        return Ok(vec![napi_array]);
+        Ok(vec![napi_array])
       })
       .unwrap();
 

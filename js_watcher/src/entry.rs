@@ -115,8 +115,7 @@ pub fn make_file_item<'a>(
     };
     if value.esm.is_none() {
       value.esm = Some(
-        js_exts
-          .clone()
+        (*js_exts)
           .into_iter()
           .chain(["mdx"].into_iter())
           .map(String::from)
@@ -124,15 +123,14 @@ pub fn make_file_item<'a>(
       );
     }
     if value.dyn_esm.is_none() {
-      value.dyn_esm = Some(js_exts.clone().into_iter().map(String::from).collect());
+      value.dyn_esm = Some((*js_exts).into_iter().map(String::from).collect());
     }
     if value.cjs.is_none() {
-      value.cjs = Some(js_exts.clone().into_iter().map(String::from).collect());
+      value.cjs = Some((*js_exts).into_iter().map(String::from).collect());
     }
     if value.css.is_none() {
       value.css = Some(
-        style_exts
-          .clone()
+        (*style_exts)
           .into_iter()
           .chain(["mdx"].into_iter())
           .map(String::from)
@@ -168,8 +166,7 @@ pub fn make_file_item<'a>(
   let mut all_deps: HashSet<String> = HashSet::new();
 
   // Scan file for imports
-  let content =
-    read_to_string(&file_path).unwrap_or_else(|_| panic!("Couldn't read file {} ", key));
+  let content = read_to_string(file_path).unwrap_or_else(|_| panic!("Couldn't read file {} ", key));
 
   let imports = parse_deps(&content, parse_conditions);
   for source_imp in imports {
@@ -309,7 +306,7 @@ fn resolve_node_module(module: &str, import: &ImportDep, node_modules: &Path) ->
     if value.is_string() {
       return Some(value.as_str().unwrap());
     } else if value.is_array() {
-      for value in value.as_array().unwrap().into_iter() {
+      for value in value.as_array().unwrap().iter() {
         if let Some(res) = handle_export_value(value, import) {
           return Some(res);
         }
@@ -332,7 +329,7 @@ fn resolve_node_module(module: &str, import: &ImportDep, node_modules: &Path) ->
       // normally, this should crash like node's `require.resolve` but I don't want this
       return Some(first_match.as_str().unwrap());
     }
-    return None;
+    None
   }
 
   for (i, comp) in Path::new(module).components().into_iter().enumerate() {
@@ -360,7 +357,7 @@ fn resolve_node_module(module: &str, import: &ImportDep, node_modules: &Path) ->
 
     // If we have "exports": ["./foo.js", "./bar.js"]
     if exports.is_array() {
-      for value in exports.as_array().unwrap().into_iter() {
+      for value in exports.as_array().unwrap().iter() {
         if let Some(res) = handle_export_value(value, import) {
           return Some(pkg_dir.join(res).clean());
         }
@@ -440,7 +437,7 @@ mod tests {
     paths.push(path_2);
 
     let (_, entries) = make_entries(paths, None, PROJECT_A_PATH.to_path_buf(), &None);
-    assert_eq!(entries.len(), 2 as usize);
+    assert_eq!(entries.len(), 2usize);
   }
 
   #[test]
@@ -451,7 +448,7 @@ mod tests {
       PROJECT_A_PATH.to_path_buf(),
       &None,
     );
-    assert_eq!(entries.len(), 5 as usize);
+    assert_eq!(entries.len(), 5usize);
   }
 
   #[test]
@@ -474,7 +471,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("relative_w_ext.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
+    assert_eq!(res.deps.len(), 1usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -492,7 +489,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("relative_wo_ext.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
+    assert_eq!(res.deps.len(), 1usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -510,7 +507,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("relative_wo_ext_w_dot.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
+    assert_eq!(res.deps.len(), 1usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -528,7 +525,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("relative_w_index.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
+    assert_eq!(res.deps.len(), 1usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -546,7 +543,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("c/relative_parent.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
+    assert_eq!(res.deps.len(), 1usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -564,7 +561,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("project_path.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
+    assert_eq!(res.deps.len(), 1usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -582,7 +579,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("x.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 2 as usize);
+    assert_eq!(res.deps.len(), 2usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -603,7 +600,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("export.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
+    assert_eq!(res.deps.len(), 1usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -620,7 +617,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("many.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 2 as usize);
+    assert_eq!(res.deps.len(), 2usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -641,7 +638,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("require.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
+    assert_eq!(res.deps.len(), 1usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();
@@ -659,7 +656,7 @@ mod tests {
     let path = PROJECT_A_PATH.join("dyn_import.js");
 
     let res = make_file_item(&path, PROJECT_A_PATH.as_path(), &store, &None).unwrap();
-    assert_eq!(res.deps.len(), 1 as usize);
+    assert_eq!(res.deps.len(), 1usize);
 
     let deps: Vec<String> = res.deps.iter().map(String::from).collect();
     let path_str = res.path.to_str().unwrap();

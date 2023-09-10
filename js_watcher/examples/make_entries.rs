@@ -12,16 +12,11 @@ fn main() {
     .clean();
 
   let duration = std::time::Instant::now();
-  let (store, _) = make_entries(
-    Vec::new(),
-    Some(vec!["**/*.js"]),
-    threejs_path.to_path_buf(),
-    &None,
-  );
+  let (store, _) = make_entries(Vec::new(), Some(vec!["**/*.js"]), threejs_path, &None);
   println!("Elapsed: {}ms", duration.elapsed().as_millis());
   println!("Processed files: {}", store.len());
   println!(
     "File with deps: {:#?}",
-    store.iter().find(|x| x.deps.len() > 0).unwrap().value()
+    store.iter().find(|x| !x.deps.is_empty()).unwrap().value()
   );
 }

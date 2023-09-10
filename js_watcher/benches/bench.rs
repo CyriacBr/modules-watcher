@@ -7,7 +7,7 @@ use js_watcher::entry::{make_entries, make_file_item};
 use js_watcher::watcher::{SetupOptions, Watcher};
 
 lazy_static! {
-  static ref CWD: PathBuf = PathBuf::from(std::env::current_dir().unwrap());
+  static ref CWD: PathBuf = std::env::current_dir().unwrap();
   static ref THREEJS_PATH: PathBuf = CWD.join("tests/fixtures/three_js");
 }
 
