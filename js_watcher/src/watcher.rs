@@ -47,8 +47,8 @@ pub struct EntryChange {
   pub tree: Option<Vec<String>>,
 }
 
-#[napi(string_enum)]
-#[derive(PartialEq, Debug)]
+#[cfg_attr(not(feature = "without-napi"), napi(string_enum), derive(PartialEq, Debug))]
+#[cfg_attr(feature = "without-napi", derive(PartialEq, Debug, Clone))]
 pub enum EntryChangeType {
   Added,
   DepAdded,
@@ -58,8 +58,8 @@ pub enum EntryChangeType {
   DepDeleted,
 }
 
-#[napi(string_enum)]
-#[derive(PartialEq, Debug)]
+#[cfg_attr(not(feature = "without-napi"), napi(string_enum), derive(PartialEq, Debug))]
+#[cfg_attr(feature = "without-napi", derive(PartialEq, Debug, Clone, Copy))]
 pub enum FileState {
   NotModified,
   Modified,
@@ -485,6 +485,7 @@ impl Watcher {
     }
   }
 
+  #[cfg(not(feature = "without-napi"))]
   #[napi(
     js_name = "watch",
     ts_args_type = "callback: (err: null | Error, result: EntryChange[]) => void"
